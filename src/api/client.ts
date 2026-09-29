@@ -7,9 +7,12 @@ export interface ApiResponse<T = any> {
 class ApiClient {
   private accessToken: string | null = null;
   private refreshPromise: Promise<string | null> | null = null;
+  private baseUrl: string;
 
   constructor() {
     this.accessToken = localStorage.getItem('finflow_access_token');
+    // Use VITE_API_BASE_URL from environment, fallback to /api for local development
+    this.baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
   }
 
   setToken(token: string | null) {
@@ -26,7 +29,9 @@ class ApiClient {
   }
 
   async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = endpoint.startsWith('http') ? endpoint : `/api${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+    const url = endpoint.startsWith('http') 
+      ? endpoint 
+      : `${this.baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
     const headers = new Headers(options.headers || {});
 
     if (this.accessToken && !headers.has('Authorization')) {
