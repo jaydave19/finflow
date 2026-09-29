@@ -1,0 +1,6 @@
+{
+  "name": "FinFlow Expense & IPO Tracker",
+  "description": "Full-stack PostgreSQL expense tracker with JWT auth, stock share & IPO subscription tracking, recurring budgets, reports, and multi-currency analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
