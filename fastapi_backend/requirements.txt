@@ -11,3 +11,4 @@ asyncpg>=0.29.0
 openpyxl>=3.1.2
 pydantic[email]
 pandas
+psycopg
