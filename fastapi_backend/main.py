@@ -1,18 +1,26 @@
+from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base, SessionLocal
 from models import User, Category, Expense, Income, Budget
 from auth import get_password_hash
-from routers import auth, users, expenses, income, categories, budgets, reports, backup, notifications
+from routers import auth, users, expenses, income, categories, budgets, reports, backup, notifications, cards, debit_cards, ipos, ledger, loans, statements, investments
 
 # Initialize tables
 Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Seed demo data
+    seed_demo_data()
+    yield
 
 app = FastAPI(
     title="FinFlow API (FastAPI)",
     description="Full-stack PostgreSQL/SQLite expense & IPO blocked capital tracking backend",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS Middleware
@@ -34,6 +42,13 @@ app.include_router(budgets.router)
 app.include_router(reports.router)
 app.include_router(backup.router)
 app.include_router(notifications.router)
+app.include_router(cards.router)
+app.include_router(debit_cards.router)
+app.include_router(ipos.router)
+app.include_router(ledger.router)
+app.include_router(loans.router)
+app.include_router(statements.router)
+app.include_router(investments.router)
 
 @app.get("/api/health", tags=["Health"])
 def health_check():
@@ -43,7 +58,6 @@ def health_check():
         "timestamp": datetime.utcnow().isoformat(),
     }
 
-@app.on_event("startup")
 def seed_demo_data():
     db = SessionLocal()
     try:

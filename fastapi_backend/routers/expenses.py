@@ -53,7 +53,7 @@ def get_expenses(
         query = query.filter(Expense.amount <= maxAmount)
 
     if isIpoOnly:
-        query = query.filter(Expense.ipo_details.isnot(None))
+        query = query.filter(Expense.ipo_details.isnot(None), Expense.ipo_details != "null")
 
     total = query.count()
 
@@ -88,6 +88,7 @@ def get_expenses(
             "recurrenceType": e.recurrence_type,
             "nextDueDate": e.next_due_date,
             "ipoDetails": e.ipo_details,
+            "cardId": e.card_id,
             "createdAt": e.created_at,
             "category": cat,
         })
@@ -128,6 +129,7 @@ def get_expense(id: str, current_user: User = Depends(get_current_user), db: Ses
         "recurrenceType": expense.recurrence_type,
         "nextDueDate": expense.next_due_date,
         "ipoDetails": expense.ipo_details,
+        "cardId": expense.card_id,
         "createdAt": expense.created_at,
         "category": cat,
     }
@@ -141,9 +143,15 @@ def create_expense(
     if exp_in.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
 
+    # Ensure ipo_details is strictly None if not provided or empty
+    ipo_details_data = None
+    if exp_in.ipoDetails and isinstance(exp_in.ipoDetails, dict) and any(exp_in.ipoDetails.values()):
+        ipo_details_data = exp_in.ipoDetails
+
     expense = Expense(
         user_id=current_user.id,
         category_id=exp_in.categoryId,
+        card_id=exp_in.cardId,
         amount=exp_in.amount,
         date=exp_in.date,
         payment_method=exp_in.paymentMethod or "UPI",
@@ -152,7 +160,7 @@ def create_expense(
         is_recurring=exp_in.isRecurring or False,
         recurrence_type=exp_in.recurrenceType,
         next_due_date=exp_in.nextDueDate,
-        ipo_details=exp_in.ipoDetails,
+        ipo_details=ipo_details_data,
     )
     db.add(expense)
     db.commit()
@@ -175,6 +183,8 @@ def update_expense(
         expense.amount = exp_in.amount
     if exp_in.categoryId is not None:
         expense.category_id = exp_in.categoryId
+    if exp_in.cardId is not None:
+        expense.card_id = exp_in.cardId
     if exp_in.date is not None:
         expense.date = exp_in.date
     if exp_in.paymentMethod is not None:
@@ -190,7 +200,10 @@ def update_expense(
     if exp_in.nextDueDate is not None:
         expense.next_due_date = exp_in.nextDueDate
     if exp_in.ipoDetails is not None:
-        expense.ipo_details = exp_in.ipoDetails
+        if isinstance(exp_in.ipoDetails, dict) and any(exp_in.ipoDetails.values()):
+            expense.ipo_details = exp_in.ipoDetails
+        else:
+            expense.ipo_details = None
 
     db.commit()
     return {"message": "Expense updated successfully"}

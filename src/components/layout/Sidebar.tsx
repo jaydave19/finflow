@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Receipt,
+  CreditCard,
   Landmark,
   Wallet,
   Tags,
@@ -12,6 +13,10 @@ import {
   Settings,
   LogOut,
   TrendingUp,
+  Users,
+  Home,
+  FileText,
+  PieChart,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
 
@@ -26,6 +31,8 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Transactions', path: '/transactions', icon: Receipt },
+    { name: 'Credit Cards', path: '/cards', icon: CreditCard },
+    { name: 'Debit Cards', path: '/debit-cards', icon: CreditCard },
     {
       name: 'Stock & IPOs',
       path: '/ipo',
@@ -37,6 +44,10 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
     { name: 'Budgets', path: '/budgets', icon: PiggyBank },
     { name: 'Categories', path: '/categories', icon: Tags },
     { name: 'Monthly Reports', path: '/reports', icon: BarChart3 },
+    { name: 'People Ledger', path: '/ledger', icon: Users },
+    { name: 'Investments', path: '/investments', icon: PieChart },
+    { name: 'Loans & EMI', path: '/loans', icon: Home },
+    { name: 'Bank Statements', path: '/statements', icon: FileText },
     { name: 'Recurring & Bills', path: '/recurring', icon: CalendarClock },
     { name: 'Profile & Settings', path: '/profile', icon: Settings },
   ];

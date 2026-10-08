@@ -7,36 +7,69 @@ import {
   TrendingUp,
   Plus,
   Search,
-  Filter,
   Trash2,
   Edit2,
-  ExternalLink,
   ShieldCheck,
-  AlertCircle,
+  Calendar,
 } from 'lucide-react';
 import { api } from '../api/client.ts';
 import { useCurrency } from '../context/CurrencyContext.tsx';
 import { useToast } from '../context/ToastContext.tsx';
-import { ExpenseModal } from '../components/expenses/ExpenseModal.tsx';
+import { IpoModal } from '../components/ipo/IpoModal.tsx';
+
+interface IpoItem {
+  id: string;
+  ipoName: string;
+  amount: number;
+  applicationDate: string;
+  paymentMethod: string;
+  sharesCount?: number;
+  bidPrice?: number;
+  lotSize?: number;
+  status: 'Blocked' | 'Allotted' | 'Refunded' | 'Sold';
+  mandateStatus?: string;
+  allotmentDate?: string;
+  bankName?: string;
+  dematAccount?: string;
+  note?: string;
+  createdAt: string;
+}
 
 export function IPOTracker() {
   const { formatAmount } = useCurrency();
   const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
-  const [ipoExpenses, setIpoExpenses] = useState<any[]>([]);
+  const [ipos, setIpos] = useState<IpoItem[]>([]);
+  const [stats, setStats] = useState({
+    totalBlockedAmount: 0,
+    blockedCount: 0,
+    totalAllottedAmount: 0,
+    allottedCount: 0,
+    totalRefundedAmount: 0,
+    totalApplications: 0,
+    totalProfitLoss: 0,
+    totalRealizedValue: 0,
+  });
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editingExpense, setEditingExpense] = useState<any>(null);
+  const [editingIpo, setEditingIpo] = useState<IpoItem | null>(null);
+  
+  // Sold Modal State
+  const [soldModalItem, setSoldModalItem] = useState<IpoItem | null>(null);
+  const [soldPriceInput, setSoldPriceInput] = useState('');
 
   const fetchIpoData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/expenses?isIpoOnly=true&limit=100');
-      setIpoExpenses(res.expenses || []);
+      const res = await api.get('/ipos');
+      setIpos(res.ipos || []);
+      if (res.stats) {
+        setStats(res.stats);
+      }
     } catch {
-      showToast({ type: 'error', message: 'Failed to load IPO transactions' });
+      showToast({ type: 'error', message: 'Failed to load IPO applications' });
     } finally {
       setLoading(false);
     }
@@ -50,29 +83,35 @@ export function IPOTracker() {
   }, [fetchIpoData]);
 
   // Quick Status Updater
-  const handleUpdateStatus = async (exp: any, newStatus: 'Blocked' | 'Allotted' | 'Refunded' | 'Sold') => {
-    try {
-      const updatedIpoDetails = {
-        ...exp.ipoDetails,
-        status: newStatus,
-        mandateStatus:
-          newStatus === 'Blocked'
-            ? 'ASBA Mandate Blocked'
-            : newStatus === 'Allotted'
-            ? 'Shares Allotted & Funds Debited'
-            : newStatus === 'Refunded'
-            ? 'Mandate Revoked / Unblocked'
-            : 'Shares Sold in Secondary Market',
-      };
+  const handleUpdateStatus = async (item: IpoItem, newStatus: 'Blocked' | 'Allotted' | 'Refunded' | 'Sold') => {
+    if (newStatus === 'Sold') {
+      setSoldModalItem(item);
+      setSoldPriceInput('');
+      return;
+    }
+    await processStatusUpdate(item, newStatus);
+  };
 
-      await api.put(`/expenses/${exp.id}`, {
-        ipoDetails: updatedIpoDetails,
-        note: `${exp.ipoDetails?.ipoName || 'IPO'} - Status: ${newStatus}`,
+  const processStatusUpdate = async (item: IpoItem, newStatus: 'Blocked' | 'Allotted' | 'Refunded' | 'Sold', finalSoldPrice?: number) => {
+    try {
+      const mandateMsg =
+        newStatus === 'Blocked'
+          ? 'ASBA Mandate Blocked'
+          : newStatus === 'Allotted'
+          ? 'Shares Allotted & Funds Debited'
+          : newStatus === 'Refunded'
+          ? 'Mandate Revoked / Unblocked'
+          : 'Shares Sold in Secondary Market';
+
+      await api.put(`/ipos/${item.id}`, {
+        status: newStatus,
+        mandateStatus: mandateMsg,
+        soldPrice: finalSoldPrice,
       });
 
       showToast({
         type: 'success',
-        message: `Updated status of ${exp.ipoDetails?.ipoName || 'IPO'} to ${newStatus}.`,
+        message: `Updated status of ${item.ipoName} to ${newStatus}.`,
       });
       fetchIpoData();
     } catch {
@@ -80,10 +119,18 @@ export function IPOTracker() {
     }
   };
 
+  const submitSoldPrice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!soldModalItem) return;
+    const finalSoldPrice = soldPriceInput.trim() !== '' ? parseFloat(soldPriceInput) : undefined;
+    await processStatusUpdate(soldModalItem, 'Sold', finalSoldPrice);
+    setSoldModalItem(null);
+  };
+
   const handleDelete = async (id: string, name: string) => {
     try {
-      await api.delete(`/expenses/${id}`);
-      setIpoExpenses(prev => prev.filter(e => e.id !== id));
+      await api.delete(`/ipos/${id}`);
+      setIpos(prev => prev.filter(e => e.id !== id));
       showToast({
         type: 'info',
         message: `Deleted IPO entry "${name || 'IPO'}".`,
@@ -91,7 +138,7 @@ export function IPOTracker() {
         duration: 7000,
         onUndo: async () => {
           try {
-            await api.post(`/expenses/${id}/restore`);
+            await api.post(`/ipos/${id}/restore`);
             showToast({ type: 'success', message: 'IPO entry restored!' });
             fetchIpoData();
           } catch {
@@ -104,34 +151,10 @@ export function IPOTracker() {
     }
   };
 
-  // Compute KPI summaries
-  let totalBlockedAmount = 0;
-  let blockedCount = 0;
-  let totalAllottedAmount = 0;
-  let allottedCount = 0;
-  let totalRefundedAmount = 0;
-
-  for (const item of ipoExpenses) {
-    const status = item.ipoDetails?.status || 'Blocked';
-    const amount = Number(item.amount || 0);
-    if (status === 'Blocked' || status === 'Applied') {
-      totalBlockedAmount += amount;
-      blockedCount++;
-    } else if (status === 'Allotted') {
-      totalAllottedAmount += amount;
-      allottedCount++;
-    } else if (status === 'Refunded') {
-      totalRefundedAmount += amount;
-    }
-  }
-
   // Filtered List
-  const filteredList = ipoExpenses.filter(item => {
-    const details = item.ipoDetails || {};
-    const nameMatch =
-      (details.ipoName || item.note || '').toLowerCase().includes(search.toLowerCase());
-    const statusMatch =
-      statusFilter === 'ALL' || (details.status || 'Blocked') === statusFilter;
+  const filteredList = ipos.filter(item => {
+    const nameMatch = (item.ipoName || item.note || '').toLowerCase().includes(search.toLowerCase());
+    const statusMatch = statusFilter === 'ALL' || item.status === statusFilter;
     return nameMatch && statusMatch;
   });
 
@@ -148,12 +171,15 @@ export function IPOTracker() {
             Share & IPO Capital Tracker
           </h2>
           <p className="text-sm text-indigo-200 mt-2 leading-relaxed">
-            Track which IPOs your money is currently blocked for in bank ASBA/UPI mandates.
-            Update status to Allotted or Refunded to balance your portfolio and free up liquid cash.
+            Manage your IPO applications separately from everyday living expenses.
+            Blocked funds are tracked as ASBA mandates and do not inflate your monthly expense totals.
           </p>
           <div className="mt-4 flex items-center gap-3">
             <button
-              onClick={() => setIsAddModalOpen(true)}
+              onClick={() => {
+                setEditingIpo(null);
+                setIsAddModalOpen(true);
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-semibold bg-indigo-500 hover:bg-indigo-600 text-white transition-all shadow-lg shadow-indigo-500/30"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -164,7 +190,7 @@ export function IPOTracker() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Currently Blocked Funds */}
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between">
@@ -174,10 +200,10 @@ export function IPOTracker() {
             </div>
           </div>
           <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-2">
-            {formatAmount(totalBlockedAmount)}
+            {formatAmount(stats.totalBlockedAmount || 0)}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {blockedCount} Active UPI / ASBA mandate(s)
+            {stats.blockedCount || 0} Active UPI / ASBA mandate(s)
           </p>
         </div>
 
@@ -190,10 +216,10 @@ export function IPOTracker() {
             </div>
           </div>
           <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-2">
-            {formatAmount(totalAllottedAmount)}
+            {formatAmount(stats.totalAllottedAmount || 0)}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {allottedCount} Successfully allotted IPO(s)
+            {stats.allottedCount || 0} Successfully allotted IPO(s)
           </p>
         </div>
 
@@ -206,7 +232,7 @@ export function IPOTracker() {
             </div>
           </div>
           <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-            {formatAmount(totalRefundedAmount)}
+            {formatAmount(stats.totalRefundedAmount || 0)}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Returned to bank account balance
@@ -222,10 +248,42 @@ export function IPOTracker() {
             </div>
           </div>
           <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-            {ipoExpenses.length}
+            {stats.totalApplications || ipos.length}
           </p>
           <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1 font-semibold">
-            Lifetime Applications
+            Separately Tracked Portfolio
+          </p>
+        </div>
+
+        {/* Realized Profit & Loss */}
+        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Profit / Loss</span>
+            <div className={`p-2 rounded-xl ${stats.totalProfitLoss >= 0 ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400' : 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'}`}>
+              <TrendingUp className="w-4 h-4" />
+            </div>
+          </div>
+          <p className={`text-2xl font-bold mt-2 ${stats.totalProfitLoss >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+            {stats.totalProfitLoss >= 0 ? '+' : ''}{formatAmount(stats.totalProfitLoss || 0)}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Net realized P&L from sold IPOs
+          </p>
+        </div>
+
+        {/* Realized Value (Takes) */}
+        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Money Taken (Returns)</span>
+            <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+              <Landmark className="w-4 h-4" />
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
+            {formatAmount(stats.totalRealizedValue || 0)}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Total returned to bank after sale
           </p>
         </div>
       </div>
@@ -236,7 +294,7 @@ export function IPOTracker() {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search IPO or stock name..."
+            placeholder="Search IPO name..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -265,14 +323,16 @@ export function IPOTracker() {
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Active & Past IPO Applications</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">All money blocked and allotted records</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">All money blocked and allotted records (Isolated from general expenses)</p>
           </div>
           <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
             {filteredList.length} Entries
           </span>
         </div>
 
-        {filteredList.length === 0 ? (
+        {loading ? (
+          <div className="p-12 text-center text-xs text-slate-400">Loading IPO records...</div>
+        ) : filteredList.length === 0 ? (
           <div className="py-16 text-center text-slate-400 text-xs">
             <Landmark className="w-12 h-12 mx-auto text-slate-300 dark:text-slate-700 mb-3" />
             <p className="font-semibold text-slate-700 dark:text-slate-300 text-sm">No IPO applications found</p>
@@ -283,25 +343,24 @@ export function IPOTracker() {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 dark:bg-slate-800/40 text-slate-400 font-semibold border-b border-slate-100 dark:border-slate-800">
                 <tr>
-                  <th className="py-3 px-6">IPO / Stock Name</th>
+                  <th className="py-3 px-6">IPO / Company Name</th>
                   <th className="py-3 px-4">Applied Date</th>
                   <th className="py-3 px-4">Lots / Shares</th>
                   <th className="py-3 px-4">Bid Price</th>
-                  <th className="py-3 px-4">Blocked Amount</th>
+                  <th className="py-3 px-4">Blocked Capital</th>
                   <th className="py-3 px-4">Mandate & Status</th>
                   <th className="py-3 px-6 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-200">
-                {filteredList.map(exp => {
-                  const details = exp.ipoDetails || {};
-                  const status = details.status || 'Blocked';
-                  const isBlocked = status === 'Blocked' || status === 'Applied';
+                {filteredList.map(item => {
+                  const status = item.status || 'Blocked';
+                  const isBlocked = status === 'Blocked';
                   const isAllotted = status === 'Allotted';
                   const isRefunded = status === 'Refunded';
 
                   return (
-                    <tr key={exp.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                    <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="py-4 px-6 font-bold text-slate-900 dark:text-white">
                         <div className="flex items-center gap-2">
                           <span className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
@@ -309,30 +368,31 @@ export function IPOTracker() {
                           </span>
                           <div>
                             <p className="font-bold text-slate-900 dark:text-white">
-                              {details.ipoName || exp.note || 'IPO Application'}
+                              {item.ipoName}
                             </p>
                             <span className="text-[10px] text-slate-400 font-normal">
-                              {exp.paymentMethod} • ASBA
+                              {item.paymentMethod} • ASBA
+                              {item.bankName ? ` (${item.bankName})` : ''}
                             </span>
                           </div>
                         </div>
                       </td>
-                      <td className="py-4 px-4 font-medium">{exp.date}</td>
+                      <td className="py-4 px-4 font-medium">{item.applicationDate}</td>
                       <td className="py-4 px-4">
                         <span className="font-semibold text-slate-800 dark:text-slate-100">
-                          {details.sharesCount ? `${details.sharesCount} shares` : '-'}
+                          {item.sharesCount ? `${item.sharesCount} shares` : '-'}
                         </span>
-                        {details.lotSize && (
+                        {item.lotSize && (
                           <span className="block text-[10px] text-slate-400">
-                            ({details.lotSize} lot)
+                            ({item.lotSize} lot)
                           </span>
                         )}
                       </td>
                       <td className="py-4 px-4 font-semibold">
-                        {details.bidPrice ? `₹${details.bidPrice}` : '-'}
+                        {item.bidPrice ? `₹${item.bidPrice}` : '-'}
                       </td>
                       <td className="py-4 px-4 font-bold text-slate-900 dark:text-white">
-                        {formatAmount(exp.amount)}
+                        {formatAmount(item.amount)}
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center gap-2">
@@ -356,7 +416,7 @@ export function IPOTracker() {
                           {/* Quick Change Status Dropdown */}
                           <select
                             value={status}
-                            onChange={e => handleUpdateStatus(exp, e.target.value as any)}
+                            onChange={e => handleUpdateStatus(item, e.target.value as any)}
                             className="text-[10px] py-1 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium"
                           >
                             <option value="Blocked">Blocked</option>
@@ -368,14 +428,17 @@ export function IPOTracker() {
                       </td>
                       <td className="py-4 px-6 text-right space-x-1">
                         <button
-                          onClick={() => setEditingExpense(exp)}
+                          onClick={() => {
+                            setEditingIpo(item);
+                            setIsAddModalOpen(true);
+                          }}
                           title="Edit"
                           className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(exp.id, details.ipoName || exp.note)}
+                          onClick={() => handleDelete(item.id, item.ipoName)}
                           title="Delete"
                           className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950"
                         >
@@ -392,16 +455,66 @@ export function IPOTracker() {
       </div>
 
       {/* Modal for adding/editing IPO */}
-      <ExpenseModal
-        isOpen={isAddModalOpen || Boolean(editingExpense)}
+      <IpoModal
+        isOpen={isAddModalOpen}
         onClose={() => {
           setIsAddModalOpen(false);
-          setEditingExpense(null);
+          setEditingIpo(null);
         }}
         onSuccess={fetchIpoData}
-        initialData={editingExpense}
-        defaultIsIpo={true}
+        initialData={editingIpo}
       />
+
+      {/* Attractive Sold Price Modal */}
+      {soldModalItem && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 scale-100 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Sold {soldModalItem.ipoName}</h3>
+                <p className="text-xs text-slate-500">Record secondary market sale</p>
+              </div>
+            </div>
+            
+            <form onSubmit={submitSoldPrice} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Sold Price per Share (₹)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">₹</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={soldPriceInput}
+                    onChange={(e) => setSoldPriceInput(e.target.value)}
+                    placeholder="Leave blank to skip"
+                    className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSoldModalItem(null)}
+                  className="flex-1 px-4 py-2 text-sm font-semibold rounded-xl text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 text-sm font-semibold rounded-xl bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-600/20 transition-all"
+                >
+                  Confirm Sale
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

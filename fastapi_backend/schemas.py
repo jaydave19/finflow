@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, AliasChoices, field_validator
 from typing import Optional, List, Any, Dict
 
 # User & Auth
@@ -15,9 +15,31 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 class ResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
     email: EmailStr
-    code: str
-    newPassword: str
+    code: str = Field(
+        ...,
+        validation_alias=AliasChoices("code", "verificationCode", "resetCode"),
+    )
+    newPassword: str = Field(
+        ...,
+        validation_alias=AliasChoices("newPassword", "new_password", "password"),
+    )
+
+    @field_validator("code", "newPassword", mode="before")
+    @classmethod
+    def normalize_reset_fields(cls, value):
+        if value is None:
+            return value
+        return str(value).strip()
+
+    @field_validator("newPassword")
+    @classmethod
+    def validate_new_password(cls, value):
+        if len(value) < 6:
+            raise ValueError("Password must be at least 6 characters long")
+        return value
 
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
@@ -80,6 +102,8 @@ class IPODetails(BaseModel):
 class ExpenseCreate(BaseModel):
     amount: float
     categoryId: Optional[str] = None
+    cardId: Optional[str] = None
+    debitCardId: Optional[str] = None
     date: str
     paymentMethod: Optional[str] = "UPI"
     note: Optional[str] = ""
@@ -92,6 +116,8 @@ class ExpenseCreate(BaseModel):
 class ExpenseUpdate(BaseModel):
     amount: Optional[float] = None
     categoryId: Optional[str] = None
+    cardId: Optional[str] = None
+    debitCardId: Optional[str] = None
     date: Optional[str] = None
     paymentMethod: Optional[str] = None
     note: Optional[str] = None
@@ -144,3 +170,57 @@ class BudgetSetRequest(BaseModel):
     year: int
     overallBudget: Optional[float] = None
     categoryBudgets: Optional[List[CategoryBudgetItem]] = None
+
+# Ledger (People / IOU)
+class LedgerCreate(BaseModel):
+    personName: str
+    amount: float
+    type: str # "I_OWE" or "THEY_OWE"
+    dueDate: Optional[str] = None
+    note: Optional[str] = ""
+
+class LedgerUpdate(BaseModel):
+    personName: Optional[str] = None
+    amount: Optional[float] = None
+    type: Optional[str] = None
+    status: Optional[str] = None
+    dueDate: Optional[str] = None
+    note: Optional[str] = None
+
+# Loans
+class LoanCreate(BaseModel):
+    loanName: str
+    bankName: str
+    loanType: str
+    principalAmount: float
+    interestRate: float
+    tenureMonths: int
+    emiAmount: float
+    startDate: str
+
+class LoanUpdate(BaseModel):
+    loanName: Optional[str] = None
+    bankName: Optional[str] = None
+    loanType: Optional[str] = None
+    principalAmount: Optional[float] = None
+    interestRate: Optional[float] = None
+    tenureMonths: Optional[int] = None
+    emiAmount: Optional[float] = None
+    startDate: Optional[str] = None
+    status: Optional[str] = None
+
+# Investments
+class InvestmentCreate(BaseModel):
+    investmentName: str
+    investmentType: str
+    amountInvested: float
+    currentValue: Optional[float] = None
+    startDate: str
+
+class InvestmentUpdate(BaseModel):
+    investmentName: Optional[str] = None
+    investmentType: Optional[str] = None
+    amountInvested: Optional[float] = None
+    currentValue: Optional[float] = None
+    startDate: Optional[str] = None
+    status: Optional[str] = None

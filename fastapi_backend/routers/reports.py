@@ -159,13 +159,16 @@ def get_monthly_report(
         Expense.user_id == current_user.id,
         Expense.is_deleted == False,
         Expense.ipo_details.isnot(None),
+        Expense.ipo_details != "null",
     ).all()
 
     total_ipo_blocked = 0.0
     active_ipo_count = 0
     active_ipos = []
     for e in all_ipo_expenses:
-        details = e.ipo_details or {}
+        if not e.ipo_details or not isinstance(e.ipo_details, dict):
+            continue
+        details = e.ipo_details
         st = details.get("status", "Blocked")
         if st in ("Blocked", "Applied"):
             total_ipo_blocked += e.amount

@@ -17,21 +17,21 @@ export async function getMonthlyReport(req: AuthenticatedRequest, res: Response)
   const prevMonthStart = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
   const prevMonthEnd = `${prevYear}-${String(prevMonth).padStart(2, '0')}-31`;
 
-  // 1. Current Month Total Expenses
+  // 1. Current Month Total Expenses (excluding IPO-tagged entries)
   const expRes = await db.query(
     `SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count 
      FROM expenses 
-     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3`,
+     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3 AND ipo_details IS NULL`,
     [userId, currentMonthStart, currentMonthEnd]
   );
   const totalExpense = Number(expRes.rows[0].total);
   const transactionCount = parseInt(expRes.rows[0].count, 10);
 
-  // 2. Previous Month Total Expenses
+  // 2. Previous Month Total Expenses (excluding IPO-tagged entries)
   const prevExpRes = await db.query(
     `SELECT COALESCE(SUM(amount), 0) as total 
      FROM expenses 
-     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3`,
+     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3 AND ipo_details IS NULL`,
     [userId, prevMonthStart, prevMonthEnd]
   );
   const prevTotalExpense = Number(prevExpRes.rows[0].total);
@@ -83,12 +83,12 @@ export async function getMonthlyReport(req: AuthenticatedRequest, res: Response)
   const highestCategory = categoryBreakdown.length > 0 ? categoryBreakdown[0] : null;
   const lowestCategory = categoryBreakdown.length > 0 ? categoryBreakdown[categoryBreakdown.length - 1] : null;
 
-  // 5. Top 5 Highest Expenses
+  // 5. Top 5 Highest Expenses (excluding IPO-tagged entries)
   const topExpensesRes = await db.query(
     `SELECT e.id, e.amount, e.date, e.payment_method, e.note, c.name as category_name, c.color as category_color, e.ipo_details
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
-     WHERE e.user_id = $1 AND e.is_deleted = false AND e.date >= $2 AND e.date <= $3
+     WHERE e.user_id = $1 AND e.is_deleted = false AND e.date >= $2 AND e.date <= $3 AND e.ipo_details IS NULL
      ORDER BY e.amount DESC
      LIMIT 5`,
     [userId, currentMonthStart, currentMonthEnd]
@@ -105,11 +105,11 @@ export async function getMonthlyReport(req: AuthenticatedRequest, res: Response)
     ipoDetails: typeof r.ipo_details === 'string' ? JSON.parse(r.ipo_details) : r.ipo_details,
   }));
 
-  // 6. Daily Spending Trend in Current Month
+  // 6. Daily Spending Trend in Current Month (excluding IPO-tagged entries)
   const dailyRes = await db.query(
     `SELECT date, COALESCE(SUM(amount), 0) as amount 
      FROM expenses 
-     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3
+     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3 AND ipo_details IS NULL
      GROUP BY date
      ORDER BY date ASC`,
     [userId, currentMonthStart, currentMonthEnd]
@@ -120,11 +120,11 @@ export async function getMonthlyReport(req: AuthenticatedRequest, res: Response)
     amount: Number(r.amount),
   }));
 
-  // 7. Payment Method Distribution
+  // 7. Payment Method Distribution (excluding IPO-tagged entries)
   const paymentRes = await db.query(
     `SELECT payment_method, COALESCE(SUM(amount), 0) as amount, COUNT(*) as count 
      FROM expenses 
-     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3
+     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3 AND ipo_details IS NULL
      GROUP BY payment_method
      ORDER BY amount DESC`,
     [userId, currentMonthStart, currentMonthEnd]
@@ -136,10 +136,10 @@ export async function getMonthlyReport(req: AuthenticatedRequest, res: Response)
     percentage: totalExpense > 0 ? Math.round((Number(r.amount) / totalExpense) * 100) : 0,
   }));
 
-  // 8. Day of week pattern
+  // 8. Day of week pattern (excluding IPO-tagged entries)
   const allExpMonth = await db.query(
     `SELECT date, amount FROM expenses 
-     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3`,
+     WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3 AND ipo_details IS NULL`,
     [userId, currentMonthStart, currentMonthEnd]
   );
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -168,11 +168,11 @@ export async function getMonthlyReport(req: AuthenticatedRequest, res: Response)
     count: dayStats[d].count,
   }));
 
-  // 9. Stock Market & IPO blocked funds summary
+  // 9. Stock Market & IPO blocked funds summary (queries dedicated ipos table)
   const ipoRes = await db.query(
-    `SELECT e.id, e.amount, e.date, e.note, e.ipo_details 
-     FROM expenses e 
-     WHERE e.user_id = $1 AND e.is_deleted = false AND e.ipo_details IS NOT NULL`,
+    `SELECT id, amount, application_date as date, note, ipo_name, status 
+     FROM ipos 
+     WHERE user_id = $1 AND is_deleted = false`,
     [userId]
   );
   let totalIpoBlocked = 0;
@@ -180,16 +180,16 @@ export async function getMonthlyReport(req: AuthenticatedRequest, res: Response)
   const activeIpos: any[] = [];
 
   for (const row of ipoRes.rows) {
-    const details = typeof row.ipo_details === 'string' ? JSON.parse(row.ipo_details) : row.ipo_details;
-    if (details && (details.status === 'Blocked' || details.status === 'Applied')) {
+    const st = row.status || 'Blocked';
+    if (st === 'Blocked' || st === 'Applied') {
       totalIpoBlocked += Number(row.amount);
       activeIpoCount++;
       activeIpos.push({
         id: row.id,
         amount: Number(row.amount),
         date: row.date,
-        note: row.note,
-        details,
+        note: row.note || row.ipo_name,
+        details: { status: st, ipoName: row.ipo_name },
       });
     }
   }
@@ -206,7 +206,7 @@ export async function getMonthlyReport(req: AuthenticatedRequest, res: Response)
     const mExp = await db.query(
       `SELECT COALESCE(SUM(amount), 0) as exp 
        FROM expenses 
-       WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3`,
+       WHERE user_id = $1 AND is_deleted = false AND date >= $2 AND date <= $3 AND ipo_details IS NULL`,
       [userId, mStart, mEnd]
     );
     const mInc = await db.query(
@@ -316,18 +316,16 @@ export async function getInsights(req: AuthenticatedRequest, res: Response): Pro
     }
   }
 
-  // 2. IPO blocked capital insight
+  // 2. IPO blocked capital insight (from dedicated ipos table)
   const ipoAllRes = await db.query(
-    `SELECT amount, ipo_details 
-     FROM expenses 
-     WHERE user_id = $1 AND is_deleted = false AND ipo_details IS NOT NULL`,
+    `SELECT amount, status FROM ipos WHERE user_id = $1 AND is_deleted = false`,
     [userId]
   );
   let ipoTotal = 0;
   let activeIpoBidsCount = 0;
   for (const row of ipoAllRes.rows) {
-    const details = typeof row.ipo_details === 'string' ? JSON.parse(row.ipo_details) : row.ipo_details;
-    if (details && (details.status === 'Blocked' || details.status === 'Applied')) {
+    const st = row.status || 'Blocked';
+    if (st === 'Blocked' || st === 'Applied') {
       ipoTotal += Number(row.amount);
       activeIpoBidsCount++;
     }
@@ -387,7 +385,7 @@ export async function exportReport(req: AuthenticatedRequest, res: Response): Pr
     `SELECT e.date, c.name as category, e.amount, e.payment_method, e.note, e.ipo_details
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
-     WHERE e.user_id = $1 AND e.is_deleted = false AND e.date >= $2 AND e.date <= $3
+     WHERE e.user_id = $1 AND e.is_deleted = false AND e.date >= $2 AND e.date <= $3 AND e.ipo_details IS NULL
      ORDER BY e.date ASC`,
     [userId, mStart, mEnd]
   );

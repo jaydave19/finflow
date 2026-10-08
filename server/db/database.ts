@@ -80,10 +80,26 @@ class DatabaseManager implements DbClient {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS credit_cards (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        card_name TEXT NOT NULL,
+        bank_name TEXT NOT NULL,
+        card_number_last4 TEXT NOT NULL,
+        card_network TEXT DEFAULT 'Visa',
+        credit_limit NUMERIC NOT NULL DEFAULT 50000,
+        billing_cycle_day INT DEFAULT 1,
+        due_date_day INT DEFAULT 20,
+        color TEXT DEFAULT '#4F46E5',
+        is_deleted BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS expenses (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         category_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
+        card_id TEXT REFERENCES credit_cards(id) ON DELETE SET NULL,
         amount NUMERIC NOT NULL,
         date TEXT NOT NULL,
         payment_method TEXT NOT NULL,
@@ -119,6 +135,27 @@ class DatabaseManager implements DbClient {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS ipos (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        ipo_name TEXT NOT NULL,
+        amount NUMERIC NOT NULL,
+        application_date TEXT NOT NULL,
+        payment_method TEXT NOT NULL DEFAULT 'UPI',
+        shares_count INT,
+        bid_price NUMERIC,
+        lot_size INT DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'Blocked',
+        mandate_status TEXT DEFAULT 'UPI ASBA Mandate Accepted',
+        allotment_date TEXT,
+        bank_name TEXT,
+        demat_account TEXT,
+        note TEXT,
+        is_deleted BOOLEAN DEFAULT false,
+        deleted_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -148,6 +185,12 @@ class DatabaseManager implements DbClient {
 
     if (this.pgPool) {
       await this.pgPool.query(ddl);
+      // Migration for existing expenses table if card_id does not exist
+      try {
+        await this.pgPool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS card_id TEXT REFERENCES credit_cards(id) ON DELETE SET NULL;`);
+      } catch {
+        // column may already exist
+      }
     } else {
       this.memDb.public.none(ddl);
     }
@@ -158,7 +201,7 @@ class DatabaseManager implements DbClient {
       if (!fs.existsSync(STATE_FILE)) return;
       const raw = fs.readFileSync(STATE_FILE, 'utf-8');
       const data = JSON.parse(raw);
-      const tables = ['users', 'categories', 'expenses', 'incomes', 'budgets', 'notifications', 'refresh_tokens', 'password_resets'];
+      const tables = ['users', 'categories', 'credit_cards', 'expenses', 'incomes', 'budgets', 'ipos', 'notifications', 'refresh_tokens', 'password_resets'];
 
       for (const table of tables) {
         if (Array.isArray(data[table])) {
@@ -192,7 +235,7 @@ class DatabaseManager implements DbClient {
         if (!fs.existsSync(DATA_DIR)) {
           fs.mkdirSync(DATA_DIR, { recursive: true });
         }
-        const tables = ['users', 'categories', 'expenses', 'incomes', 'budgets', 'notifications', 'refresh_tokens', 'password_resets'];
+        const tables = ['users', 'categories', 'credit_cards', 'expenses', 'incomes', 'budgets', 'ipos', 'notifications', 'refresh_tokens', 'password_resets'];
         const state: Record<string, any[]> = {};
         for (const t of tables) {
           const res = await this.query(`SELECT * FROM ${t}`);
@@ -235,7 +278,7 @@ class DatabaseManager implements DbClient {
   }
 
   async rawBackup(): Promise<Record<string, any[]>> {
-    const tables = ['users', 'categories', 'expenses', 'incomes', 'budgets', 'notifications'];
+    const tables = ['users', 'categories', 'credit_cards', 'expenses', 'incomes', 'budgets', 'ipos', 'notifications'];
     const result: Record<string, any[]> = {};
     for (const t of tables) {
       const res = await this.query(`SELECT * FROM ${t}`);

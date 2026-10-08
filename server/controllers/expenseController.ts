@@ -20,7 +20,62 @@ export async function getExpenses(req: AuthenticatedRequest, res: Response): Pro
   const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
   const isIpoOnly = req.query.isIpoOnly === 'true';
 
-  const conditions: string[] = ['e.user_id = $1', 'e.is_deleted = false'];
+  // If client requested IPO-only expenses via this endpoint, query dedicated ipos table
+  if (isIpoOnly) {
+    const ipoRes = await db.query(
+      `SELECT * FROM ipos 
+       WHERE user_id = $1 AND is_deleted = false 
+       ORDER BY application_date DESC, created_at DESC 
+       LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
+
+    const countRes = await db.query(
+      `SELECT COUNT(*) as total FROM ipos WHERE user_id = $1 AND is_deleted = false`,
+      [userId]
+    );
+    const total = parseInt(countRes.rows[0].total, 10);
+
+    const expenses = ipoRes.rows.map(row => ({
+      id: row.id,
+      amount: Number(row.amount),
+      date: row.application_date,
+      paymentMethod: row.payment_method || 'UPI',
+      note: row.note || row.ipo_name,
+      tags: ['IPO', row.status],
+      isRecurring: false,
+      ipoDetails: {
+        ipoName: row.ipo_name,
+        sharesCount: row.shares_count,
+        bidPrice: row.bid_price,
+        lotSize: row.lot_size,
+        status: row.status,
+        mandateStatus: row.mandate_status,
+        allotmentDate: row.allotment_date,
+      },
+      category: {
+        id: 'ipo-category',
+        name: 'Stock Market & IPOs',
+        icon: 'Landmark',
+        color: '#4F46E5',
+      },
+      createdAt: row.created_at,
+    }));
+
+    res.json({
+      expenses,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    });
+    return;
+  }
+
+  // Regular expense queries: Strictly exclude any IPO items
+  const conditions: string[] = ['e.user_id = $1', 'e.is_deleted = false', 'e.ipo_details IS NULL'];
   const params: any[] = [userId];
   let paramIdx = 2;
 
@@ -60,10 +115,6 @@ export async function getExpenses(req: AuthenticatedRequest, res: Response): Pro
     params.push(maxAmount);
   }
 
-  if (isIpoOnly) {
-    conditions.push(`e.ipo_details IS NOT NULL`);
-  }
-
   const whereClause = conditions.join(' AND ');
 
   const countQuery = `
@@ -79,10 +130,12 @@ export async function getExpenses(req: AuthenticatedRequest, res: Response): Pro
     SELECT 
       e.id, e.amount, e.date, e.payment_method, e.note, e.tags,
       e.is_recurring, e.recurrence_type, e.next_due_date, e.ipo_details,
-      e.created_at,
-      c.id as category_id, c.name as category_name, c.icon as category_icon, c.color as category_color
+      e.card_id, e.created_at,
+      c.id as category_id, c.name as category_name, c.icon as category_icon, c.color as category_color,
+      cc.id as card_card_id, cc.card_name, cc.bank_name, cc.card_number_last4, cc.card_network, cc.color as card_color
     FROM expenses e
     LEFT JOIN categories c ON e.category_id = c.id
+    LEFT JOIN credit_cards cc ON e.card_id = cc.id
     WHERE ${whereClause}
     ORDER BY ${sortBy} ${sortOrder}, e.created_at DESC
     LIMIT $${paramIdx++} OFFSET $${paramIdx++}
@@ -101,7 +154,15 @@ export async function getExpenses(req: AuthenticatedRequest, res: Response): Pro
     isRecurring: row.is_recurring,
     recurrenceType: row.recurrence_type,
     nextDueDate: row.next_due_date,
-    ipoDetails: typeof row.ipo_details === 'string' ? JSON.parse(row.ipo_details) : row.ipo_details,
+    cardId: row.card_id,
+    card: row.card_card_id ? {
+      id: row.card_card_id,
+      cardName: row.card_name,
+      bankName: row.bank_name,
+      last4: row.card_number_last4,
+      cardNetwork: row.card_network,
+      color: row.card_color,
+    } : null,
     category: row.category_id ? {
       id: row.category_id,
       name: row.category_name,
@@ -124,9 +185,12 @@ export async function getExpenses(req: AuthenticatedRequest, res: Response): Pro
 
 export async function getExpenseById(req: AuthenticatedRequest, res: Response): Promise<void> {
   const result = await db.query(
-    `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+    `SELECT e.*, 
+            c.name as category_name, c.icon as category_icon, c.color as category_color,
+            cc.card_name, cc.bank_name, cc.card_number_last4, cc.card_network, cc.color as card_color
      FROM expenses e
      LEFT JOIN categories c ON e.category_id = c.id
+     LEFT JOIN credit_cards cc ON e.card_id = cc.id
      WHERE e.id = $1 AND e.user_id = $2 AND e.is_deleted = false`,
     [req.params.id, req.userId]
   );
@@ -147,7 +211,15 @@ export async function getExpenseById(req: AuthenticatedRequest, res: Response): 
     isRecurring: row.is_recurring,
     recurrenceType: row.recurrence_type,
     nextDueDate: row.next_due_date,
-    ipoDetails: typeof row.ipo_details === 'string' ? JSON.parse(row.ipo_details) : row.ipo_details,
+    cardId: row.card_id,
+    card: row.card_id ? {
+      id: row.card_id,
+      cardName: row.card_name,
+      bankName: row.bank_name,
+      last4: row.card_number_last4,
+      cardNetwork: row.card_network,
+      color: row.card_color,
+    } : null,
     category: row.category_id ? {
       id: row.category_id,
       name: row.category_name,
@@ -162,6 +234,7 @@ export async function createExpense(req: AuthenticatedRequest, res: Response): P
   const {
     amount,
     categoryId,
+    cardId,
     date,
     paymentMethod,
     note,
@@ -188,13 +261,14 @@ export async function createExpense(req: AuthenticatedRequest, res: Response): P
   const id = crypto.randomUUID();
   await db.query(
     `INSERT INTO expenses (
-      id, user_id, category_id, amount, date, payment_method, note, tags,
+      id, user_id, category_id, card_id, amount, date, payment_method, note, tags,
       is_recurring, recurrence_type, next_due_date, ipo_details
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       id,
       req.userId,
       categoryId || null,
+      cardId || null,
       amount,
       date,
       paymentMethod,
@@ -227,6 +301,7 @@ export async function updateExpense(req: AuthenticatedRequest, res: Response): P
   const {
     amount,
     categoryId,
+    cardId,
     date,
     paymentMethod,
     note,
@@ -250,18 +325,20 @@ export async function updateExpense(req: AuthenticatedRequest, res: Response): P
     `UPDATE expenses SET 
       amount = COALESCE($1, amount),
       category_id = $2,
-      date = COALESCE($3, date),
-      payment_method = COALESCE($4, payment_method),
-      note = COALESCE($5, note),
-      tags = COALESCE($6, tags),
-      is_recurring = COALESCE($7, is_recurring),
-      recurrence_type = $8,
-      next_due_date = $9,
-      ipo_details = $10
-     WHERE id = $11 AND user_id = $12`,
+      card_id = $3,
+      date = COALESCE($4, date),
+      payment_method = COALESCE($5, payment_method),
+      note = COALESCE($6, note),
+      tags = COALESCE($7, tags),
+      is_recurring = COALESCE($8, is_recurring),
+      recurrence_type = $9,
+      next_due_date = $10,
+      ipo_details = $11
+     WHERE id = $12 AND user_id = $13`,
     [
       amount,
       categoryId || null,
+      cardId !== undefined ? (cardId || null) : null,
       date,
       paymentMethod,
       note,
@@ -332,12 +409,13 @@ export async function duplicateExpense(req: AuthenticatedRequest, res: Response)
 
   await db.query(
     `INSERT INTO expenses (
-      id, user_id, category_id, amount, date, payment_method, note, tags, ipo_details
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      id, user_id, category_id, card_id, amount, date, payment_method, note, tags, ipo_details
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       newId,
       req.userId,
       exp.category_id,
+      exp.card_id || null,
       exp.amount,
       today,
       exp.payment_method,
@@ -347,5 +425,5 @@ export async function duplicateExpense(req: AuthenticatedRequest, res: Response)
     ]
   );
 
-  res.status(201).json({ id: newId, message: 'Expense duplicated successfully' });
+  res.status(201).json({ id, message: 'Expense duplicated successfully' });
 }

@@ -155,11 +155,30 @@ def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
 
 @router.post("/reset-password")
 def reset_password(req: ResetPasswordRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == req.email.lower()).first()
-    if not user or user.reset_code != req.code or not user.reset_code_expires_at or user.reset_code_expires_at < datetime.utcnow():
+    email = str(req.email).lower().strip()
+    code = str(req.code).strip()
+    new_password = str(req.newPassword).strip()
+
+    if not code or len(code) < 4:
+        raise HTTPException(status_code=400, detail="Verification code is required")
+
+    if not new_password or len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired verification code")
 
-    user.password_hash = get_password_hash(req.newPassword)
+    if user.reset_code != code:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+
+    if not user.reset_code_expires_at or user.reset_code_expires_at < datetime.utcnow():
+        user.reset_code = None
+        user.reset_code_expires_at = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="Verification code has expired")
+
+    user.password_hash = get_password_hash(new_password)
     user.reset_code = None
     user.reset_code_expires_at = None
     db.commit()

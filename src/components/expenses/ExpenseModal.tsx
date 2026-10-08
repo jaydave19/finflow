@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, CreditCard, Tag, Repeat, Landmark, Sparkles } from 'lucide-react';
+import { X, Calendar, CreditCard, Tag, Repeat, Sparkles, Plus } from 'lucide-react';
 import { api } from '../../api/client.ts';
 import { useCurrency } from '../../context/CurrencyContext.tsx';
 import { useToast } from '../../context/ToastContext.tsx';
+import { useNavigate } from 'react-router-dom';
 
 interface Category {
   id: string;
@@ -11,19 +12,40 @@ interface Category {
   color: string;
 }
 
+interface CreditCardOption {
+  id: string;
+  cardName: string;
+  bankName: string;
+  last4: string;
+  availableCredit: number;
+  creditLimit: number;
+}
+
+interface DebitCardOption {
+  id: string;
+  cardName: string;
+  bankName: string;
+  last4: string;
+  remainingBalance: number;
+}
+
 interface ExpenseModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
   initialData?: any;
-  defaultIsIpo?: boolean;
+  defaultIsIpo?: boolean; // Kept for interface compatibility
 }
 
-export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultIsIpo = false }: ExpenseModalProps) {
-  const { currencyConfig } = useCurrency();
+export function ExpenseModal({ isOpen, onClose, onSuccess, initialData }: ExpenseModalProps) {
+  const { currencyConfig, formatAmount } = useCurrency();
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const [categories, setCategories] = useState<Category[]>([]);
+  const [creditCards, setCreditCards] = useState<CreditCardOption[]>([]);
+  const [debitCards, setDebitCards] = useState<DebitCardOption[]>([]);
+  const [loadingCards, setLoadingCards] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Form State
@@ -31,107 +53,94 @@ export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultI
   const [categoryId, setCategoryId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState('UPI');
+  const [cardId, setCardId] = useState('');
+  const [debitCardId, setDebitCardId] = useState('');
   const [note, setNote] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrenceType, setRecurrenceType] = useState('monthly');
 
-  // IPO & Stock Specific State (User requirement!)
-  const [isIpoMode, setIsIpoMode] = useState(defaultIsIpo);
-  const [ipoName, setIpoName] = useState('');
-  const [sharesCount, setSharesCount] = useState('');
-  const [bidPrice, setBidPrice] = useState('');
-  const [lotSize, setLotSize] = useState('1');
-  const [ipoStatus, setIpoStatus] = useState<'Blocked' | 'Allotted' | 'Refunded' | 'Sold'>('Blocked');
-  const [mandateStatus, setMandateStatus] = useState('UPI ASBA Mandate Accepted');
-
   useEffect(() => {
     if (isOpen) {
       fetchCategories();
+      fetchCreditCards();
+      fetchDebitCards();
+
       if (initialData) {
         setAmount(String(initialData.amount || ''));
         setCategoryId(initialData.category?.id || initialData.categoryId || '');
         setDate(initialData.date || new Date().toISOString().split('T')[0]);
-        setPaymentMethod(initialData.paymentMethod || 'UPI');
+        const pm = initialData.paymentMethod === 'Card' ? 'Credit Card' : initialData.paymentMethod || 'UPI';
+        setPaymentMethod(pm);
+        setCardId(initialData.cardId || initialData.card?.id || '');
+        setDebitCardId(initialData.debitCardId || '');
         setNote(initialData.note || '');
         setTags(initialData.tags || []);
         setIsRecurring(Boolean(initialData.isRecurring));
         setRecurrenceType(initialData.recurrenceType || 'monthly');
-
-        if (initialData.ipoDetails) {
-          setIsIpoMode(true);
-          setIpoName(initialData.ipoDetails.ipoName || '');
-          setSharesCount(String(initialData.ipoDetails.sharesCount || ''));
-          setBidPrice(String(initialData.ipoDetails.bidPrice || ''));
-          setLotSize(String(initialData.ipoDetails.lotSize || '1'));
-          setIpoStatus(initialData.ipoDetails.status || 'Blocked');
-          setMandateStatus(initialData.ipoDetails.mandateStatus || 'UPI ASBA Mandate Accepted');
-        } else {
-          setIsIpoMode(defaultIsIpo);
-        }
       } else {
         // Reset form
         setAmount('');
         setDate(new Date().toISOString().split('T')[0]);
         setPaymentMethod('UPI');
+        setCardId('');
+        setDebitCardId('');
         setNote('');
         setTags([]);
         setIsRecurring(false);
         setRecurrenceType('monthly');
-        setIsIpoMode(defaultIsIpo);
-        setIpoName('');
-        setSharesCount('');
-        setBidPrice('');
-        setLotSize('1');
-        setIpoStatus('Blocked');
-        setMandateStatus('UPI ASBA Mandate Accepted');
       }
     }
-  }, [isOpen, initialData, defaultIsIpo]);
+  }, [isOpen, initialData]);
 
   const fetchCategories = async () => {
     try {
       const data = await api.get('/categories');
       const cats: Category[] = data.categories || [];
+      // Filter out stock market/IPO from everyday expense dropdown if desired, or let user pick
       setCategories(cats);
-
       if (!categoryId && cats.length > 0) {
-        if (defaultIsIpo) {
-          const ipoCat = cats.find(c => c.name.toLowerCase().includes('ipo') || c.name.toLowerCase().includes('stock'));
-          setCategoryId(ipoCat ? ipoCat.id : cats[0].id);
-        } else {
-          setCategoryId(cats[0].id);
-        }
+        setCategoryId(cats[0].id);
       }
     } catch {
       // ignore
     }
   };
 
-  // If user selects Stock & IPO category, auto-enable IPO fields
-  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedId = e.target.value;
-    setCategoryId(selectedId);
-    const cat = categories.find(c => c.id === selectedId);
-    if (cat && (cat.name.toLowerCase().includes('ipo') || cat.name.toLowerCase().includes('stock'))) {
-      setIsIpoMode(true);
+  const fetchCreditCards = async () => {
+    setLoadingCards(true);
+    try {
+      const data = await api.get('/cards');
+      const cardList: CreditCardOption[] = data.cards || [];
+      setCreditCards(cardList);
+      if (cardList.length > 0 && !cardId) {
+        setCardId(cardList[0].id);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingCards(false);
     }
   };
 
-  // Auto calculate IPO amount when shares and bid price are entered
-  const handleCalcIpoAmount = () => {
-    const shares = parseFloat(sharesCount);
-    const price = parseFloat(bidPrice);
-    if (!isNaN(shares) && !isNaN(price) && shares > 0 && price > 0) {
-      setAmount(String(Math.round(shares * price)));
+  const fetchDebitCards = async () => {
+    try {
+      const data = await api.get('/debit-cards');
+      const cardList: DebitCardOption[] = data.cards || [];
+      setDebitCards(cardList);
+      if (cardList.length > 0 && !debitCardId) {
+        setDebitCardId(cardList[0].id);
+      }
+    } catch {
+      // ignore
     }
   };
 
   const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) {
       e.preventDefault();
-      const val = tagInput.trim().replace(/^#/, '');
+      const val = tagInput.trim().replace(/^/, '');
       if (!tags.includes(val)) {
         setTags([...tags, val]);
       }
@@ -151,11 +160,18 @@ export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultI
       return;
     }
 
+    if (paymentMethod === 'Credit Card' && creditCards.length > 0 && !cardId) {
+      showToast({ type: 'error', message: 'Please select which credit card was used.' });
+      return;
+    }
+
     setLoading(true);
     try {
       const payload: any = {
         amount: numAmount,
         categoryId: categoryId || null,
+        cardId: paymentMethod === 'Credit Card' ? (cardId || null) : null,
+        debitCardId: paymentMethod === 'Debit Card' ? (debitCardId || null) : null,
         date,
         paymentMethod,
         note: note.trim(),
@@ -165,31 +181,12 @@ export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultI
         nextDueDate: isRecurring ? date : null,
       };
 
-      if (isIpoMode && (ipoName || sharesCount || bidPrice)) {
-        payload.ipoDetails = {
-          ipoName: ipoName.trim() || 'IPO Application',
-          sharesCount: sharesCount ? parseInt(sharesCount, 10) : undefined,
-          bidPrice: bidPrice ? parseFloat(bidPrice) : undefined,
-          lotSize: lotSize ? parseInt(lotSize, 10) : 1,
-          status: ipoStatus,
-          mandateStatus,
-        };
-        if (!payload.note) {
-          payload.note = `${ipoName || 'IPO'} - ${ipoStatus === 'Blocked' ? 'Mandate Blocked' : ipoStatus}`;
-        }
-      }
-
       if (initialData?.id) {
         await api.put(`/expenses/${initialData.id}`, payload);
         showToast({ type: 'success', message: 'Expense updated successfully!' });
       } else {
         await api.post('/expenses', payload);
-        showToast({
-          type: 'success',
-          message: isIpoMode
-            ? `IPO Mandate recorded! ₹${numAmount.toLocaleString()} marked as ${ipoStatus}.`
-            : 'Expense recorded successfully!',
-        });
+        showToast({ type: 'success', message: 'Expense recorded successfully!' });
       }
 
       onSuccess();
@@ -210,10 +207,10 @@ export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultI
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-              {initialData?.id ? 'Edit Expense' : isIpoMode ? 'Track IPO / Share Buy' : 'Add New Expense'}
+              {initialData?.id ? 'Edit Expense' : 'Add New Expense'}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {isIpoMode ? 'Track application capital blocked in ASBA/UPI mandate' : 'Record everyday expenditure'}
+              Record everyday expenditure and link to your payment mode
             </p>
           </div>
           <button
@@ -255,7 +252,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultI
               </label>
               <select
                 value={categoryId}
-                onChange={handleCategoryChange}
+                onChange={e => setCategoryId(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {categories.map(c => (
@@ -270,25 +267,23 @@ export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultI
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
                 Date *
               </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  required
-                  value={date}
-                  onChange={e => setDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+              <input
+                type="date"
+                required
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
           </div>
 
-          {/* Payment Method */}
+          {/* Payment Method Selector */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
               Payment Method *
             </label>
-            <div className="grid grid-cols-4 gap-2">
-              {['UPI', 'Card', 'Cash', 'Net Banking'].map(pm => (
+            <div className="grid grid-cols-3 gap-2">
+              {['UPI', 'Cash', 'Net Banking', 'Credit Card', 'Debit Card', 'Other'].map(pm => (
                 <button
                   type="button"
                   key={pm}
@@ -305,100 +300,121 @@ export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultI
             </div>
           </div>
 
-          {/* Stock Market & IPO Specialized Card (Feature requested!) */}
-          <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
-                  Stock Market & IPO Application Details
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsIpoMode(!isIpoMode)}
-                className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-              >
-                {isIpoMode ? 'Minimize' : 'Enable IPO Details'}
-              </button>
-            </div>
-
-            {isIpoMode && (
-              <div className="space-y-3 pt-2">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    IPO / Company Name
+          {/* Credit Card Dropdown (Active when Credit Card is selected) */}
+          {paymentMethod === 'Credit Card' && (
+            <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 space-y-2 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <label className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                    Select Your Credit Card *
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Tata Tech IPO / Premier Energies"
-                    value={ipoName}
-                    onChange={e => setIpoName(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
                 </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Shares Count
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="e.g. 30"
-                      value={sharesCount}
-                      onChange={e => setSharesCount(e.target.value)}
-                      onBlur={handleCalcIpoAmount}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Cut-off / Price (₹)
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="e.g. 500"
-                      value={bidPrice}
-                      onChange={e => setBidPrice(e.target.value)}
-                      onBlur={handleCalcIpoAmount}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Allotment Status
-                    </label>
-                    <select
-                      value={ipoStatus}
-                      onChange={e => setIpoStatus(e.target.value as any)}
-                      className="w-full px-2 py-1.5 text-xs bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-lg text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="Blocked">Blocked (ASBA)</option>
-                      <option value="Allotted">Allotted (Shares Received)</option>
-                      <option value="Refunded">Refunded / Unblocked</option>
-                      <option value="Sold">Sold with P&L</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-indigo-700 dark:text-indigo-300">
-                  <span>Mandate Status: <strong>{mandateStatus}</strong></span>
-                  {sharesCount && bidPrice && (
-                    <button
-                      type="button"
-                      onClick={handleCalcIpoAmount}
-                      className="text-xs font-bold underline"
-                    >
-                      Auto-fill Amount: ₹{Number(sharesCount) * Number(bidPrice)}
-                    </button>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    navigate('/cards');
+                  }}
+                  className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5"
+                >
+                  <Plus className="w-3 h-3" /> Manage Cards
+                </button>
               </div>
-            )}
-          </div>
+
+              {loadingCards ? (
+                <div className="text-xs text-slate-400 py-2">Loading your credit cards...</div>
+              ) : creditCards.length === 0 ? (
+                <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/50 flex items-center justify-between">
+                  <span className="text-xs text-slate-600 dark:text-slate-400">
+                    No credit cards added yet.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      navigate('/cards');
+                    }}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 underline"
+                  >
+                    + Add Card
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <select
+                    value={cardId}
+                    onChange={e => setCardId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">-- Choose Credit Card --</option>
+                    {creditCards.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.bankName} {c.cardName} (•••• {c.last4}) — Avail: {formatAmount(c.availableCredit)}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-indigo-700/80 dark:text-indigo-300/80 mt-1 block">
+                    Expense will be charged to this card and update its available credit.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Debit Card Dropdown */}
+          {paymentMethod === 'Debit Card' && (
+            <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 space-y-2 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <label className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                    Select Your Debit Card *
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { onClose(); navigate('/debit-cards'); }}
+                  className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5"
+                >
+                  <Plus className="w-3 h-3" /> Manage Cards
+                </button>
+              </div>
+
+              {debitCards.length === 0 ? (
+                <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-100 dark:border-emerald-900/50 flex items-center justify-between">
+                  <span className="text-xs text-slate-600 dark:text-slate-400">No debit cards added yet.</span>
+                  <button
+                    type="button"
+                    onClick={() => { onClose(); navigate('/debit-cards'); }}
+                    className="text-xs font-bold text-emerald-600 dark:text-emerald-400 underline"
+                  >
+                    + Add Card
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <select
+                    value={debitCardId}
+                    onChange={e => setDebitCardId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="">-- Choose Debit Card --</option>
+                    {debitCards.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.bankName} – {c.cardName} (•••• {c.last4}) | Bal: {formatAmount(c.remainingBalance)}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-emerald-700/80 dark:text-emerald-300/80 mt-1 block">
+                    Amount will be deducted from this bank account balance.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Note / Description */}
           <div>
@@ -407,7 +423,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultI
             </label>
             <input
               type="text"
-              placeholder="e.g. Dinner with friends, Car fuel, Netflix sub"
+              placeholder="e.g. Dinner with friends, Car fuel, Supermarket grocery"
               value={note}
               onChange={e => setNote(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -434,7 +450,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess, initialData, defaultI
             </div>
             <input
               type="text"
-              placeholder="Type a tag and press Enter (e.g. food, trip, sip)..."
+              placeholder="Type a tag and press Enter (e.g. food, trip, office)..."
               value={tagInput}
               onChange={e => setTagInput(e.target.value)}
               onKeyDown={handleAddTag}

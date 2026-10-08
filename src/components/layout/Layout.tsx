@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar.tsx';
 import { Header } from './Header.tsx';
 import { MobileNav } from './MobileNav.tsx';
 import { ExpenseModal } from '../expenses/ExpenseModal.tsx';
+import { IpoModal } from '../ipo/IpoModal.tsx';
 import { X } from 'lucide-react';
 
 export function Layout() {
@@ -16,6 +17,7 @@ export function Layout() {
   const getPageTitle = (path: string) => {
     if (path === '/') return 'Dashboard Overview';
     if (path.startsWith('/transactions')) return 'All Transactions';
+    if (path.startsWith('/cards')) return 'Credit Cards Portfolio';
     if (path.startsWith('/ipo')) return 'Stock Market & IPO Blocked Capital';
     if (path.startsWith('/income')) return 'Income & Earnings';
     if (path.startsWith('/categories')) return 'Categories & Budgets';
@@ -71,15 +73,13 @@ export function Layout() {
         isOpen={isAddExpenseOpen}
         onClose={() => setIsAddExpenseOpen(false)}
         onSuccess={refreshCurrentView}
-        defaultIsIpo={false}
       />
 
-      {/* Global Specialized Add IPO/Stock Modal (Requested Feature) */}
-      <ExpenseModal
+      {/* Global Dedicated Add IPO/Stock Modal (Separately Managed) */}
+      <IpoModal
         isOpen={isIpoModalOpen}
         onClose={() => setIsIpoModalOpen(false)}
         onSuccess={refreshCurrentView}
-        defaultIsIpo={true}
       />
     </div>
   );

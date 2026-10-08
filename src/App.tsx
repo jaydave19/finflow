@@ -15,6 +15,12 @@ import { BudgetsPage } from './pages/BudgetsPage.tsx';
 import { ReportsPage } from './pages/ReportsPage.tsx';
 import { RecurringPage } from './pages/RecurringPage.tsx';
 import { ProfilePage } from './pages/ProfilePage.tsx';
+import { LedgerPage } from './pages/LedgerPage.tsx';
+import { LoansPage } from './pages/LoansPage.tsx';
+import { BankStatementsPage } from './pages/BankStatementsPage.tsx';
+import { InvestmentsPage } from './pages/InvestmentsPage.tsx';
+import { CreditCardsPage } from './pages/CreditCardsPage.tsx';
+import { DebitCardsPage } from './pages/DebitCardsPage.tsx';
 
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
@@ -97,12 +103,18 @@ export default function App() {
                 >
                   <Route index element={<Dashboard />} />
                   <Route path="transactions" element={<Transactions />} />
+                  <Route path="cards" element={<CreditCardsPage />} />
+                  <Route path="debit-cards" element={<DebitCardsPage />} />
                   <Route path="ipo" element={<IPOTracker />} />
                   <Route path="income" element={<IncomePage />} />
                   <Route path="categories" element={<CategoriesPage />} />
                   <Route path="budgets" element={<BudgetsPage />} />
                   <Route path="reports" element={<ReportsPage />} />
                   <Route path="recurring" element={<RecurringPage />} />
+                  <Route path="ledger" element={<LedgerPage />} />
+                  <Route path="loans" element={<LoansPage />} />
+                  <Route path="investments" element={<InvestmentsPage />} />
+                  <Route path="statements" element={<BankStatementsPage />} />
                   <Route path="profile" element={<ProfilePage />} />
                 </Route>
 
