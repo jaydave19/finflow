@@ -159,7 +159,6 @@ def get_monthly_report(
         Expense.user_id == current_user.id,
         Expense.is_deleted == False,
         Expense.ipo_details.isnot(None),
-        Expense.ipo_details != "null",
     ).all()
 
     total_ipo_blocked = 0.0

@@ -16,7 +16,9 @@ import { ReportsPage } from './pages/ReportsPage.tsx';
 import { RecurringPage } from './pages/RecurringPage.tsx';
 import { ProfilePage } from './pages/ProfilePage.tsx';
 import { LedgerPage } from './pages/LedgerPage.tsx';
+import { PersonLedgerPage } from './pages/PersonLedgerPage.tsx';
 import { LoansPage } from './pages/LoansPage.tsx';
+import { LoanDetailPage } from './pages/LoanDetailPage.tsx';
 import { BankStatementsPage } from './pages/BankStatementsPage.tsx';
 import { InvestmentsPage } from './pages/InvestmentsPage.tsx';
 import { CreditCardsPage } from './pages/CreditCardsPage.tsx';
@@ -112,7 +114,9 @@ export default function App() {
                   <Route path="reports" element={<ReportsPage />} />
                   <Route path="recurring" element={<RecurringPage />} />
                   <Route path="ledger" element={<LedgerPage />} />
+                  <Route path="ledger/:id" element={<PersonLedgerPage />} />
                   <Route path="loans" element={<LoansPage />} />
+                  <Route path="loans/:id" element={<LoanDetailPage />} />
                   <Route path="investments" element={<InvestmentsPage />} />
                   <Route path="statements" element={<BankStatementsPage />} />
                   <Route path="profile" element={<ProfilePage />} />

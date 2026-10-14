@@ -23,6 +23,7 @@ import backupRoutes from './server/routes/backupRoutes.ts';
 import notificationRoutes from './server/routes/notificationRoutes.ts';
 import cardRoutes from './server/routes/cardRoutes.ts';
 import ipoRoutes from './server/routes/ipoRoutes.ts';
+import ledgerRoutes from './server/routes/ledgerRoutes.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,6 +51,7 @@ app.use('/api/backup', backupRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/cards', cardRoutes);
 app.use('/api/ipos', ipoRoutes);
+app.use('/api/ledger', ledgerRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

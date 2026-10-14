@@ -6,12 +6,19 @@ import { AuthenticatedRequest } from '../middleware/auth.ts';
 export async function getCards(req: AuthenticatedRequest, res: Response): Promise<void> {
   const userId = req.userId;
 
-  const result = await db.query(
-    `SELECT * FROM credit_cards 
-     WHERE user_id = $1 AND is_deleted = false 
-     ORDER BY created_at DESC`,
-    [userId]
-  );
+  const type = req.query.type as string | undefined;
+
+  let query = 'SELECT * FROM credit_cards WHERE user_id = $1 AND is_deleted = false';
+  const params: any[] = [userId];
+
+  if (type) {
+    query += ' AND card_type = $2';
+    params.push(type);
+  }
+  
+  query += ' ORDER BY created_at DESC';
+
+  const result = await db.query(query, params);
 
   const cardsWithStats = await Promise.all(
     result.rows.map(async row => {
@@ -34,6 +41,15 @@ export async function getCards(req: AuthenticatedRequest, res: Response): Promis
         bankName: row.bank_name,
         last4: row.card_number_last4,
         cardNetwork: row.card_network || 'Visa',
+        cardType: row.card_type || 'credit',
+        nameOnCard: row.name_on_card,
+        expiryMmYy: row.expiry_mm_yy,
+        linkedAccount: row.linked_account,
+        atmLimit: row.atm_limit ? Number(row.atm_limit) : undefined,
+        posLimit: row.pos_limit ? Number(row.pos_limit) : undefined,
+        status: row.status || 'Active',
+        amcReminderDate: row.amc_reminder_date,
+        lostCardContact: row.lost_card_contact,
         creditLimit: limit,
         currentSpent: spent,
         availableCredit: available,
@@ -110,6 +126,15 @@ export async function getCardById(req: AuthenticatedRequest, res: Response): Pro
       bankName: row.bank_name,
       last4: row.card_number_last4,
       cardNetwork: row.card_network || 'Visa',
+      cardType: row.card_type || 'credit',
+      nameOnCard: row.name_on_card,
+      expiryMmYy: row.expiry_mm_yy,
+      linkedAccount: row.linked_account,
+      atmLimit: row.atm_limit ? Number(row.atm_limit) : undefined,
+      posLimit: row.pos_limit ? Number(row.pos_limit) : undefined,
+      status: row.status || 'Active',
+      amcReminderDate: row.amc_reminder_date,
+      lostCardContact: row.lost_card_contact,
       creditLimit: limit,
       currentSpent,
       availableCredit,
@@ -137,6 +162,15 @@ export async function createCard(req: AuthenticatedRequest, res: Response): Prom
     bankName,
     last4,
     cardNetwork,
+    cardType,
+    nameOnCard,
+    expiryMmYy,
+    linkedAccount,
+    atmLimit,
+    posLimit,
+    status,
+    amcReminderDate,
+    lostCardContact,
     creditLimit,
     billingCycleDay,
     dueDateDay,
@@ -154,18 +188,20 @@ export async function createCard(req: AuthenticatedRequest, res: Response): Prom
     return;
   }
 
-  const limitNum = parseFloat(creditLimit);
-  if (isNaN(limitNum) || limitNum <= 0) {
-    res.status(400).json({ error: 'Please provide a valid positive credit limit' });
+  const limitNum = creditLimit !== undefined ? parseFloat(creditLimit) : 0;
+  if ((cardType === 'credit' || !cardType) && (isNaN(limitNum) || limitNum <= 0)) {
+    res.status(400).json({ error: 'Please provide a valid positive credit limit for credit cards' });
     return;
   }
 
   const id = crypto.randomUUID();
   await db.query(
     `INSERT INTO credit_cards (
-      id, user_id, card_name, bank_name, card_number_last4, card_network,
+      id, user_id, card_name, bank_name, card_number_last4, card_network, card_type,
+      name_on_card, expiry_mm_yy, linked_account, atm_limit, pos_limit, status,
+      amc_reminder_date, lost_card_contact,
       credit_limit, billing_cycle_day, due_date_day, color
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
     [
       id,
       req.userId,
@@ -173,6 +209,15 @@ export async function createCard(req: AuthenticatedRequest, res: Response): Prom
       bankName.trim(),
       cleanLast4,
       cardNetwork || 'Visa',
+      cardType || 'credit',
+      nameOnCard || null,
+      expiryMmYy || null,
+      linkedAccount || null,
+      atmLimit !== undefined ? parseFloat(atmLimit) : null,
+      posLimit !== undefined ? parseFloat(posLimit) : null,
+      status || 'Active',
+      amcReminderDate || null,
+      lostCardContact || null,
       limitNum,
       parseInt(billingCycleDay, 10) || 1,
       parseInt(dueDateDay, 10) || 20,
@@ -189,6 +234,15 @@ export async function updateCard(req: AuthenticatedRequest, res: Response): Prom
     bankName,
     last4,
     cardNetwork,
+    cardType,
+    nameOnCard,
+    expiryMmYy,
+    linkedAccount,
+    atmLimit,
+    posLimit,
+    status,
+    amcReminderDate,
+    lostCardContact,
     creditLimit,
     billingCycleDay,
     dueDateDay,
@@ -216,16 +270,34 @@ export async function updateCard(req: AuthenticatedRequest, res: Response): Prom
       bank_name = COALESCE($2, bank_name),
       card_number_last4 = COALESCE($3, card_number_last4),
       card_network = COALESCE($4, card_network),
-      credit_limit = COALESCE($5, credit_limit),
-      billing_cycle_day = COALESCE($6, billing_cycle_day),
-      due_date_day = COALESCE($7, due_date_day),
-      color = COALESCE($8, color)
-     WHERE id = $9 AND user_id = $10`,
+      card_type = COALESCE($5, card_type),
+      name_on_card = COALESCE($6, name_on_card),
+      expiry_mm_yy = COALESCE($7, expiry_mm_yy),
+      linked_account = COALESCE($8, linked_account),
+      atm_limit = COALESCE($9, atm_limit),
+      pos_limit = COALESCE($10, pos_limit),
+      status = COALESCE($11, status),
+      amc_reminder_date = COALESCE($12, amc_reminder_date),
+      lost_card_contact = COALESCE($13, lost_card_contact),
+      credit_limit = COALESCE($14, credit_limit),
+      billing_cycle_day = COALESCE($15, billing_cycle_day),
+      due_date_day = COALESCE($16, due_date_day),
+      color = COALESCE($17, color)
+     WHERE id = $18 AND user_id = $19`,
     [
       cardName ? cardName.trim() : null,
       bankName ? bankName.trim() : null,
       cleanLast4 || null,
       cardNetwork || null,
+      cardType || null,
+      nameOnCard || null,
+      expiryMmYy || null,
+      linkedAccount || null,
+      atmLimit !== undefined ? parseFloat(atmLimit) : null,
+      posLimit !== undefined ? parseFloat(posLimit) : null,
+      status || null,
+      amcReminderDate || null,
+      lostCardContact || null,
       creditLimit !== undefined ? parseFloat(creditLimit) : null,
       billingCycleDay !== undefined ? parseInt(billingCycleDay, 10) : null,
       dueDateDay !== undefined ? parseInt(dueDateDay, 10) : null,

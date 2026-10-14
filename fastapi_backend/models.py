@@ -29,9 +29,15 @@ class User(Base):
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     credit_cards = relationship("CreditCard", back_populates="user", cascade="all, delete-orphan")
     debit_cards = relationship("DebitCard", back_populates="user", cascade="all, delete-orphan")
-    ledgers = relationship("Ledger", back_populates="user", cascade="all, delete-orphan")
+    people = relationship("Person", back_populates="user", cascade="all, delete-orphan")
+    ledger_entries = relationship("LedgerEntry", back_populates="user", cascade="all, delete-orphan")
+    ledger_settlements = relationship("LedgerSettlement", back_populates="user", cascade="all, delete-orphan")
     loans = relationship("Loan", back_populates="user", cascade="all, delete-orphan")
+    loan_schedules = relationship("LoanSchedule", back_populates="user", cascade="all, delete-orphan")
+    loan_prepayments = relationship("LoanPrepayment", back_populates="user", cascade="all, delete-orphan")
+    loan_rate_changes = relationship("LoanRateChange", back_populates="user", cascade="all, delete-orphan")
     investments = relationship("Investment", back_populates="user", cascade="all, delete-orphan")
+    investment_transactions = relationship("InvestmentTransaction", back_populates="user", cascade="all, delete-orphan")
 
 class Category(Base):
     __tablename__ = "categories"
@@ -155,22 +161,64 @@ class DebitCard(Base):
     user = relationship("User", back_populates="debit_cards")
     expenses = relationship("Expense", back_populates="debit_card")
 
-class Ledger(Base):
-    __tablename__ = "ledgers"
+class Person(Base):
+    __tablename__ = "people"
 
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    person_name = Column(String(100), nullable=False)
-    amount = Column(Float, nullable=False)
-    type = Column(String(20), nullable=False) # "I_OWE" or "THEY_OWE"
-    status = Column(String(20), default="PENDING") # "PENDING", "SETTLED"
-    due_date = Column(String(10), nullable=True)
-    note = Column(Text, default="")
+    name = Column(String(100), nullable=False)
+    phone = Column(String(20), nullable=True)
+    photo = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
     is_deleted = Column(Boolean, default=False)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    user = relationship("User", back_populates="ledgers")
+    user = relationship("User", back_populates="people")
+    entries = relationship("LedgerEntry", back_populates="person", cascade="all, delete-orphan")
+
+class LedgerEntry(Base):
+    __tablename__ = "ledger_entries"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    person_id = Column(String, ForeignKey("people.id", ondelete="CASCADE"), nullable=False)
+    type = Column(String(20), nullable=False) # 'gave' or 'took'
+    amount = Column(Float, nullable=False)
+    date = Column(String(10), nullable=False)
+    reason = Column(Text, nullable=True)
+    due_date = Column(String(10), nullable=True)
+    payment_method = Column(String(50), nullable=True)
+    attachment = Column(Text, nullable=True)
+    interest_rate = Column(Float, nullable=True)
+    interest_type = Column(String(20), nullable=True)
+    is_settled = Column(Boolean, default=False)
+    settled_amount = Column(Float, default=0.0)
+    status = Column(String(20), default="Pending")
+    is_deleted = Column(Boolean, default=False)
+    deleted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="ledger_entries")
+    person = relationship("Person", back_populates="entries")
+    settlements = relationship("LedgerSettlement", back_populates="entry", cascade="all, delete-orphan")
+
+class LedgerSettlement(Base):
+    __tablename__ = "ledger_settlements"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    entry_id = Column(String, ForeignKey("ledger_entries.id", ondelete="CASCADE"), nullable=False)
+    amount = Column(Float, nullable=False)
+    date = Column(String(10), nullable=False)
+    payment_method = Column(String(50), nullable=True)
+    note = Column(Text, nullable=True)
+    is_deleted = Column(Boolean, default=False)
+    deleted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="ledger_settlements")
+    entry = relationship("LedgerEntry", back_populates="settlements")
 
 class Loan(Base):
     __tablename__ = "loans"
@@ -179,18 +227,77 @@ class Loan(Base):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     loan_name = Column(String(100), nullable=False)
     bank_name = Column(String(100), nullable=False)
-    loan_type = Column(String(50), nullable=False) # Personal, Home, Auto, Education
+    loan_type = Column(String(50), nullable=False) 
     principal_amount = Column(Float, nullable=False)
-    interest_rate = Column(Float, nullable=False) # Annual Percentage
+    interest_rate = Column(Float, nullable=False) 
+    rate_type = Column(String(20), default="Fixed") 
     tenure_months = Column(Integer, nullable=False)
     emi_amount = Column(Float, nullable=False)
     start_date = Column(String(10), nullable=False)
-    status = Column(String(20), default="ACTIVE") # ACTIVE, CLOSED
+    first_emi_date = Column(String(10), nullable=True)
+    processing_fee = Column(Float, default=0.0)
+    other_charges = Column(Float, default=0.0)
+    linked_account = Column(String(100), nullable=True)
+    account_number_masked = Column(String(20), nullable=True)
+    co_borrower = Column(String(100), nullable=True)
+    document_paths = Column(JSON, default=list)
+    status = Column(String(20), default="ACTIVE") # ACTIVE, CLOSED, OVERDUE
     is_deleted = Column(Boolean, default=False)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="loans")
+    schedules = relationship("LoanSchedule", back_populates="loan", cascade="all, delete-orphan")
+    prepayments = relationship("LoanPrepayment", back_populates="loan", cascade="all, delete-orphan")
+    rate_changes = relationship("LoanRateChange", back_populates="loan", cascade="all, delete-orphan")
+
+class LoanSchedule(Base):
+    __tablename__ = "loan_schedules"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    loan_id = Column(String, ForeignKey("loans.id", ondelete="CASCADE"), nullable=False)
+    emi_number = Column(Integer, nullable=False)
+    due_date = Column(String(10), nullable=False)
+    principal_component = Column(Float, nullable=False)
+    interest_component = Column(Float, nullable=False)
+    total_emi = Column(Float, nullable=False)
+    remaining_balance = Column(Float, nullable=False)
+    status = Column(String(20), default="Pending") # Pending, Paid, Skipped, Late
+    paid_date = Column(String(10), nullable=True)
+    late_fee_applied = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="loan_schedules")
+    loan = relationship("Loan", back_populates="schedules")
+
+class LoanPrepayment(Base):
+    __tablename__ = "loan_prepayments"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    loan_id = Column(String, ForeignKey("loans.id", ondelete="CASCADE"), nullable=False)
+    date = Column(String(10), nullable=False)
+    amount = Column(Float, nullable=False)
+    strategy = Column(String(50), nullable=False) # reduce_tenure, reduce_emi
+    calculated_interest_saved = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="loan_prepayments")
+    loan = relationship("Loan", back_populates="prepayments")
+
+class LoanRateChange(Base):
+    __tablename__ = "loan_rate_changes"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    loan_id = Column(String, ForeignKey("loans.id", ondelete="CASCADE"), nullable=False)
+    effective_date = Column(String(10), nullable=False)
+    new_rate = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="loan_rate_changes")
+    loan = relationship("Loan", back_populates="rate_changes")
 
 class Investment(Base):
     __tablename__ = "investments"
@@ -198,13 +305,72 @@ class Investment(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     investment_name = Column(String(100), nullable=False)
-    investment_type = Column(String(50), nullable=False) # Mutual Funds, Stocks, FD, Gold, Crypto
-    amount_invested = Column(Float, nullable=False)
+    investment_type = Column(String(50), nullable=False)
+    platform = Column(String(100), nullable=True)
+    amount_invested = Column(Float, nullable=False, default=0.0)
     current_value = Column(Float, nullable=True)
     start_date = Column(String(10), nullable=False)
-    status = Column(String(20), default="ACTIVE") # ACTIVE, WITHDRAWN
+    units_quantity = Column(Float, nullable=True)
+    buy_price = Column(Float, nullable=True)
+    notes = Column(String, nullable=True)
+    goal_tag = Column(String(50), nullable=True)
+    
+    # Type-specific fields
+    interest_rate = Column(Float, nullable=True) # FD/RD, SGB/Bonds
+    tenure_months = Column(Integer, nullable=True) # FD/RD
+    maturity_date = Column(String(10), nullable=True) # FD/RD, SGB/Bonds
+    maturity_amount = Column(Float, nullable=True) # FD/RD
+    auto_renew = Column(Boolean, default=False) # FD
+    sip_amount = Column(Float, nullable=True) # SIP
+    sip_date = Column(Integer, nullable=True) # SIP 1-31
+    yearly_deposit = Column(Float, nullable=True) # PPF
+    lock_in_end = Column(String(10), nullable=True) # PPF
+    
+    status = Column(String(20), default="ACTIVE") # ACTIVE, WITHDRAWN, SOLD
     is_deleted = Column(Boolean, default=False)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="investments")
+    transactions = relationship("InvestmentTransaction", back_populates="investment", cascade="all, delete-orphan")
+
+class InvestmentTransaction(Base):
+    __tablename__ = "investment_transactions"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    investment_id = Column(String, ForeignKey("investments.id", ondelete="CASCADE"), nullable=False)
+    date = Column(String(10), nullable=False)
+    type = Column(String(20), nullable=False) # BUY, SELL, SIP, DIVIDEND
+    amount = Column(Float, nullable=False)
+    units = Column(Float, nullable=True)
+    price = Column(Float, nullable=True)
+    realized_pl = Column(Float, nullable=True) # For SELL
+    tax_tag = Column(String(20), nullable=True) # STCG, LTCG
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="investment_transactions")
+    investment = relationship("Investment", back_populates="transactions")
+
+class StatementUpload(Base):
+    __tablename__ = "statement_uploads"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    bank_name = Column(String(100), nullable=False)
+    account_id = Column(String(100), nullable=True)
+    period_type = Column(String(50), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    parsed_count = Column(Integer, default=0)
+    saved_count = Column(Integer, default=0)
+    is_deleted = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class TransactionRule(Base):
+    __tablename__ = "transaction_rules"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    keyword = Column(String(255), nullable=False)
+    category_id = Column(String, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)

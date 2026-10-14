@@ -23,9 +23,15 @@ interface DebitCardItem {
   bankName: string;
   last4: string;
   cardNetwork: string;
-  accountBalance: number;
+  nameOnCard: string;
+  expiryMmYy: string;
+  linkedAccount: string;
+  atmLimit: number;
+  posLimit: number;
+  status: string;
+  amcReminderDate: string;
+  lostCardContact: string;
   currentSpent: number;
-  remainingBalance: number;
   txCount: number;
   color: string;
   createdAt: string;
@@ -62,9 +68,7 @@ export function DebitCardsPage() {
 
   const [cards, setCards] = useState<DebitCardItem[]>([]);
   const [summary, setSummary] = useState({
-    totalBalance: 0,
     totalSpent: 0,
-    totalRemaining: 0,
     cardsCount: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -77,7 +81,14 @@ export function DebitCardsPage() {
   const [customBank, setCustomBank] = useState('');
   const [last4, setLast4] = useState('');
   const [cardNetwork, setCardNetwork] = useState('RuPay');
-  const [accountBalance, setAccountBalance] = useState('');
+  const [nameOnCard, setNameOnCard] = useState('');
+  const [expiryMmYy, setExpiryMmYy] = useState('');
+  const [linkedAccount, setLinkedAccount] = useState('');
+  const [atmLimit, setAtmLimit] = useState('');
+  const [posLimit, setPosLimit] = useState('');
+  const [status, setStatus] = useState('Active');
+  const [amcReminderDate, setAmcReminderDate] = useState('');
+  const [lostCardContact, setLostCardContact] = useState('');
   const [selectedColor, setSelectedColor] = useState('#065F46');
   const [formLoading, setFormLoading] = useState(false);
 
@@ -88,7 +99,7 @@ export function DebitCardsPage() {
   const fetchCards = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.get('/debit-cards');
+      const data = await api.get('/cards?type=debit');
       const cardList = data.cards || [];
       setCards(cardList);
       setSummary(data.summary || {});
@@ -114,7 +125,7 @@ export function DebitCardsPage() {
     const fetchTxs = async () => {
       setLoadingTxs(true);
       try {
-        const data = await api.get(`/debit-cards/${selectedCardId}`);
+        const data = await api.get(`/cards/${selectedCardId}`);
         setCardTransactions(data.transactions || []);
       } catch { /* ignore */ } finally {
         setLoadingTxs(false);
@@ -130,7 +141,14 @@ export function DebitCardsPage() {
     setCustomBank('');
     setLast4('');
     setCardNetwork('RuPay');
-    setAccountBalance('');
+    setNameOnCard('');
+    setExpiryMmYy('');
+    setLinkedAccount('');
+    setAtmLimit('');
+    setPosLimit('');
+    setStatus('Active');
+    setAmcReminderDate('');
+    setLostCardContact('');
     setSelectedColor('#065F46');
     setIsModalOpen(true);
   };
@@ -147,7 +165,14 @@ export function DebitCardsPage() {
     }
     setLast4(card.last4);
     setCardNetwork(card.cardNetwork || 'RuPay');
-    setAccountBalance(String(card.accountBalance));
+    setNameOnCard(card.nameOnCard || '');
+    setExpiryMmYy(card.expiryMmYy || '');
+    setLinkedAccount(card.linkedAccount || '');
+    setAtmLimit(card.atmLimit ? String(card.atmLimit) : '');
+    setPosLimit(card.posLimit ? String(card.posLimit) : '');
+    setStatus(card.status || 'Active');
+    setAmcReminderDate(card.amcReminderDate || '');
+    setLostCardContact(card.lostCardContact || '');
     setSelectedColor(card.color || '#065F46');
     setIsModalOpen(true);
   };
@@ -167,15 +192,23 @@ export function DebitCardsPage() {
         bankName: actualBank,
         last4: cleanLast4,
         cardNetwork,
-        accountBalance: parseFloat(accountBalance) || 0,
+        cardType: 'debit',
+        nameOnCard,
+        expiryMmYy,
+        linkedAccount,
+        atmLimit: atmLimit ? parseFloat(atmLimit) : undefined,
+        posLimit: posLimit ? parseFloat(posLimit) : undefined,
+        status,
+        amcReminderDate,
+        lostCardContact,
         color: selectedColor,
       };
 
       if (editingCard) {
-        await api.put(`/debit-cards/${editingCard.id}`, payload);
+        await api.put(`/cards/${editingCard.id}`, payload);
         showToast({ type: 'success', message: 'Debit card updated!' });
       } else {
-        await api.post('/debit-cards', payload);
+        await api.post('/cards', payload);
         showToast({ type: 'success', message: 'Debit card added!' });
       }
 
@@ -191,7 +224,7 @@ export function DebitCardsPage() {
   const handleDeleteCard = async (card: DebitCardItem) => {
     if (!confirm(`Remove ${card.bankName} •••• ${card.last4}?`)) return;
     try {
-      await api.delete(`/debit-cards/${card.id}`);
+      await api.delete(`/cards/${card.id}`);
       showToast({ type: 'info', message: `Removed card •••• ${card.last4}.` });
       if (selectedCardId === card.id) setSelectedCardId(null);
       fetchCards();
@@ -228,22 +261,7 @@ export function DebitCardsPage() {
       </div>
 
       {/* Summary KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Bank Balance</span>
-            <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400">
-              <Wallet className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-            {formatAmount(summary.totalBalance || 0)}
-          </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Across {summary.cardsCount || 0} linked account(s)
-          </p>
-        </div>
-
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Spent</span>
@@ -259,20 +277,7 @@ export function DebitCardsPage() {
           </p>
         </div>
 
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Remaining Balance</span>
-            <div className="p-2 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
-              <CheckCircle className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-2">
-            {formatAmount(summary.totalRemaining || 0)}
-          </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Available in your accounts
-          </p>
-        </div>
+
       </div>
 
       {/* Cards Grid */}
@@ -309,8 +314,22 @@ export function DebitCardsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {cards.map(card => {
               const isSelected = selectedCardId === card.id;
-              const spentPct = card.accountBalance > 0 ? Math.min(100, (card.currentSpent / card.accountBalance) * 100) : 0;
-              const isLow = spentPct > 70;
+              const isExpired = card.status === 'Expired';
+              const isBlocked = card.status === 'Blocked';
+              
+              let expiryWarning = false;
+              if (card.expiryMmYy) {
+                const [mm, yy] = card.expiryMmYy.split('/');
+                if (mm && yy) {
+                  const expiryDate = new Date(2000 + parseInt(yy), parseInt(mm) - 1, 1);
+                  const now = new Date();
+                  const diffTime = Math.abs(expiryDate.getTime() - now.getTime());
+                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                  if (expiryDate > now && diffDays <= 30) {
+                    expiryWarning = true;
+                  }
+                }
+              }
 
               return (
                 <div
@@ -347,55 +366,53 @@ export function DebitCardsPage() {
                       </div>
                       <Zap className="w-4 h-4 text-white/70" />
                       <span className="text-[9px] uppercase tracking-widest text-white/50 font-bold">DEBIT</span>
+                      {(isExpired || isBlocked) && (
+                        <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/80 text-white">
+                          {isBlocked ? 'BLOCKED' : 'EXPIRED'}
+                        </span>
+                      )}
                     </div>
 
                     {/* Bottom: Number & Balance */}
                     <div className="relative z-10 flex items-end justify-between">
                       <div>
                         <p className="font-mono text-sm tracking-widest drop-shadow text-white/95">•••• •••• •••• {card.last4}</p>
-                        <p className="text-[10px] text-white/70 uppercase tracking-wider mt-0.5 font-medium truncate max-w-[150px]">{user?.name || 'Cardholder'}</p>
+                        <p className="text-[10px] text-white/70 uppercase tracking-wider mt-0.5 font-medium truncate max-w-[150px]">{card.nameOnCard || user?.name || 'Cardholder'}</p>
                       </div>
                       <div className="text-right">
-                        <span className="text-[9px] uppercase tracking-wider text-white/70 block font-semibold">Balance</span>
-                        <span className="text-xs font-bold font-mono">{formatAmount(card.accountBalance)}</span>
+                        <span className="text-[9px] uppercase tracking-wider text-white/70 block font-semibold">Valid Thru</span>
+                        <span className="text-xs font-bold font-mono">{card.expiryMmYy || 'MM/YY'}</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Card Stats */}
                   <div className="mt-4 space-y-3">
-                    {/* Spent / Balance */}
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 dark:text-slate-400 font-medium">Spent / Balance</span>
-                      <span className="font-bold text-slate-900 dark:text-white">
-                        {formatAmount(card.currentSpent)} <span className="font-normal text-slate-400">/ {formatAmount(card.accountBalance)}</span>
-                      </span>
-                    </div>
-
-                    {/* Balance bar */}
-                    <div>
-                      <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-300 rounded-full ${
-                            spentPct > 85 ? 'bg-rose-500' : spentPct > 60 ? 'bg-amber-500' : 'bg-emerald-500'
-                          }`}
-                          style={{ width: `${spentPct}%` }}
-                        />
+                    {expiryWarning && (
+                      <div className="p-2 rounded bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium border border-amber-200 dark:border-amber-800">
+                        ⚠️ Card expiring in less than 30 days!
                       </div>
-                      <div className="flex items-center justify-between text-[11px] mt-1 text-slate-500">
-                        <span>{spentPct.toFixed(0)}% spent</span>
-                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                          {formatAmount(card.remainingBalance)} remaining
-                        </span>
-                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                       <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                         <span className="text-[10px] text-slate-500 block">Current Spent</span>
+                         <span className="font-bold">{formatAmount(card.currentSpent)}</span>
+                       </div>
+                       <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+                         <span className="text-[10px] text-slate-500 block">Status</span>
+                         <span className={`font-bold ${card.status === 'Active' ? 'text-emerald-500' : 'text-rose-500'}`}>{card.status}</span>
+                       </div>
                     </div>
-
+                    {card.lostCardContact && (
+                      <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-1">
+                        <span className="font-semibold">Lost Card:</span> {card.lostCardContact}
+                      </div>
+                    )}
                     {/* Actions */}
                     <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                       <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
                         <ArrowDownLeft className="w-3 h-3 text-slate-400" />
-                        {card.txCount || 0} debit transaction(s)
-                        {isLow && <span className="ml-1 text-amber-500 font-bold">⚠ Low</span>}
+                        {card.txCount || 0} debit txns
                       </span>
                       <div className="flex items-center gap-1">
                         <button
@@ -556,19 +573,87 @@ export function DebitCardsPage() {
                 </div>
               </div>
 
-              {/* Account Balance */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Current Bank Account Balance (₹)
-                </label>
-                <input
-                  type="number" step="any" placeholder="e.g. 50000"
-                  value={accountBalance} onChange={e => setAccountBalance(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Enter your current bank balance. Expenses linked to this card will be deducted from it.
-                </p>
+              {/* Basic Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Cardholder Name</label>
+                  <input
+                    type="text" placeholder="John Doe"
+                    value={nameOnCard} onChange={e => setNameOnCard(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Expiry (MM/YY)</label>
+                  <input
+                    type="text" placeholder="12/28" maxLength={5}
+                    value={expiryMmYy} onChange={e => setExpiryMmYy(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Account and Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Linked Account</label>
+                  <input
+                    type="text" placeholder="e.g. Salary Acct ending 1234"
+                    value={linkedAccount} onChange={e => setLinkedAccount(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Status</label>
+                  <select
+                    value={status} onChange={e => setStatus(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Blocked">Blocked</option>
+                    <option value="Expired">Expired</option>
+                  </select>
+                </div>
+              </div>
+              
+              {/* Limits */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Daily ATM Limit</label>
+                  <input
+                    type="number" placeholder="50000"
+                    value={atmLimit} onChange={e => setAtmLimit(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Daily POS Limit</label>
+                  <input
+                    type="number" placeholder="100000"
+                    value={posLimit} onChange={e => setPosLimit(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Optional Contact and AMC */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Lost Card Contact</label>
+                  <input
+                    type="text" placeholder="1800-123-456"
+                    value={lostCardContact} onChange={e => setLostCardContact(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">AMC Reminder Date</label>
+                  <input
+                    type="date"
+                    value={amcReminderDate} onChange={e => setAmcReminderDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
               </div>
 
               {/* Color */}

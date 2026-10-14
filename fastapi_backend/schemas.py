@@ -194,9 +194,16 @@ class LoanCreate(BaseModel):
     loanType: str
     principalAmount: float
     interestRate: float
+    rateType: Optional[str] = "Fixed"
     tenureMonths: int
     emiAmount: float
     startDate: str
+    firstEmiDate: Optional[str] = None
+    processingFee: Optional[float] = 0.0
+    otherCharges: Optional[float] = 0.0
+    linkedAccount: Optional[str] = None
+    accountNumberMasked: Optional[str] = None
+    coBorrower: Optional[str] = None
 
 class LoanUpdate(BaseModel):
     loanName: Optional[str] = None
@@ -204,23 +211,81 @@ class LoanUpdate(BaseModel):
     loanType: Optional[str] = None
     principalAmount: Optional[float] = None
     interestRate: Optional[float] = None
+    rateType: Optional[str] = None
     tenureMonths: Optional[int] = None
     emiAmount: Optional[float] = None
     startDate: Optional[str] = None
+    firstEmiDate: Optional[str] = None
+    processingFee: Optional[float] = None
+    otherCharges: Optional[float] = None
+    linkedAccount: Optional[str] = None
+    accountNumberMasked: Optional[str] = None
+    coBorrower: Optional[str] = None
     status: Optional[str] = None
+
+class LoanEMIAction(BaseModel):
+    status: str # Paid, Skipped, Late
+    paidDate: Optional[str] = None
+    lateFeeApplied: Optional[float] = 0.0
+
+class LoanPrepaymentCreate(BaseModel):
+    date: str
+    amount: float
+    strategy: str # reduce_tenure, reduce_emi
+
+class LoanRateChangeCreate(BaseModel):
+    effectiveDate: str
+    newRate: float
 
 # Investments
 class InvestmentCreate(BaseModel):
     investmentName: str
     investmentType: str
+    platform: Optional[str] = None
     amountInvested: float
     currentValue: Optional[float] = None
     startDate: str
+    unitsQuantity: Optional[float] = None
+    buyPrice: Optional[float] = None
+    notes: Optional[str] = None
+    goalTag: Optional[str] = None
+    interestRate: Optional[float] = None
+    tenureMonths: Optional[int] = None
+    maturityDate: Optional[str] = None
+    maturityAmount: Optional[float] = None
+    autoRenew: Optional[bool] = False
+    sipAmount: Optional[float] = None
+    sipDate: Optional[int] = None
+    yearlyDeposit: Optional[float] = None
+    lockInEnd: Optional[str] = None
 
 class InvestmentUpdate(BaseModel):
     investmentName: Optional[str] = None
     investmentType: Optional[str] = None
+    platform: Optional[str] = None
     amountInvested: Optional[float] = None
     currentValue: Optional[float] = None
     startDate: Optional[str] = None
+    unitsQuantity: Optional[float] = None
+    buyPrice: Optional[float] = None
+    notes: Optional[str] = None
+    goalTag: Optional[str] = None
+    interestRate: Optional[float] = None
+    tenureMonths: Optional[int] = None
+    maturityDate: Optional[str] = None
+    maturityAmount: Optional[float] = None
+    autoRenew: Optional[bool] = None
+    sipAmount: Optional[float] = None
+    sipDate: Optional[int] = None
+    yearlyDeposit: Optional[float] = None
+    lockInEnd: Optional[str] = None
     status: Optional[str] = None
+
+class InvestmentTransactionCreate(BaseModel):
+    date: str
+    type: str # BUY, SELL, SIP, DIVIDEND
+    amount: float
+    units: Optional[float] = None
+    price: Optional[float] = None
+    realizedPl: Optional[float] = None
+    taxTag: Optional[str] = None

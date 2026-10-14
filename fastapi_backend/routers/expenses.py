@@ -53,7 +53,7 @@ def get_expenses(
         query = query.filter(Expense.amount <= maxAmount)
 
     if isIpoOnly:
-        query = query.filter(Expense.ipo_details.isnot(None), Expense.ipo_details != "null")
+        query = query.filter(Expense.ipo_details.isnot(None), )
 
     total = query.count()
 

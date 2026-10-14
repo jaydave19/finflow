@@ -135,7 +135,6 @@ def list_ipos(
     query = db.query(Expense).filter(
         Expense.user_id == current_user.id,
         Expense.ipo_details.isnot(None),
-        Expense.ipo_details != "null",
         Expense.is_deleted == False,
     ).order_by(desc(Expense.date), desc(Expense.created_at))
 
@@ -182,7 +181,7 @@ def get_ipo(
         Expense.id == ipo_id,
         Expense.user_id == current_user.id,
         Expense.ipo_details.isnot(None),
-        Expense.ipo_details != "null",
+        
         Expense.is_deleted == False,
     ).first()
     if not expense or not expense.ipo_details or not isinstance(expense.ipo_details, dict):
@@ -240,7 +239,7 @@ def update_ipo(
         Expense.id == ipo_id,
         Expense.user_id == current_user.id,
         Expense.ipo_details.isnot(None),
-        Expense.ipo_details != "null",
+        
         Expense.is_deleted == False,
     ).first()
     if not expense or not expense.ipo_details or not isinstance(expense.ipo_details, dict):
@@ -293,7 +292,7 @@ def delete_ipo(
         Expense.id == ipo_id,
         Expense.user_id == current_user.id,
         Expense.ipo_details.isnot(None),
-        Expense.ipo_details != "null",
+        
         Expense.is_deleted == False,
     ).first()
     if not expense:
