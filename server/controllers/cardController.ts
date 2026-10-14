@@ -6,7 +6,7 @@ import { AuthenticatedRequest } from '../middleware/auth.ts';
 export async function getCards(req: AuthenticatedRequest, res: Response): Promise<void> {
   const userId = req.userId;
 
-  const type = req.query.type as string | undefined;
+  const type = (req.query.type as string | undefined) || (req.baseUrl?.includes('debit') ? 'debit' : undefined);
 
   let query = 'SELECT * FROM credit_cards WHERE user_id = $1 AND is_deleted = false';
   const params: any[] = [userId];

@@ -425,5 +425,5 @@ export async function duplicateExpense(req: AuthenticatedRequest, res: Response)
     ]
   );
 
-  res.status(201).json({ id, message: 'Expense duplicated successfully' });
+  res.status(201).json({ id: newId, message: 'Expense duplicated successfully' });
 }

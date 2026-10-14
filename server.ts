@@ -50,6 +50,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/cards', cardRoutes);
+app.use('/api/debit-cards', cardRoutes);
 app.use('/api/ipos', ipoRoutes);
 app.use('/api/ledger', ledgerRoutes);
 
